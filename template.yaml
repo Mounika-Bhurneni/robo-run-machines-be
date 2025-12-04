@@ -32,7 +32,7 @@ Globals:
   Function:
     Timeout: 60
     Handler: app.lambda_handler
-    Runtime: python3.10   # FIXED: same runtime across functions
+    Runtime: python3.10
     Environment:
       Variables:
         DB_HOST: !Ref ParamDBHost
@@ -51,13 +51,6 @@ Resources:
         AllowOrigins: ["*"]
         AllowHeaders: ["*"]
 
-  MyLayer:
-    Type: AWS::Serverless::LayerVersion
-    Properties:
-      ContentUri: common_code
-      CompatibleRuntimes:
-        - python3.10
-
   MyLibLayer:
     Type: AWS::Serverless::LayerVersion
     Properties:
@@ -73,7 +66,6 @@ Resources:
       FunctionName: !Sub "${AWS::StackName}-lambda-function"
       CodeUri: hello_world/
       Layers:
-        - !Ref MyLayer
         - !Ref MyLibLayer
       Events:
         RootGet:
@@ -89,7 +81,6 @@ Resources:
       FunctionName: !Sub "${AWS::StackName}-simple-auth"
       CodeUri: hello_world/
       Layers:
-        - !Ref MyLayer
         - !Ref MyLibLayer
       Events:
         RootGet:
@@ -105,7 +96,6 @@ Resources:
       FunctionName: !Sub "${AWS::StackName}-test-endpoint"
       CodeUri: test_endpoint/
       Layers:
-        - !Ref MyLayer
         - !Ref MyLibLayer
       Events:
         TestPost:
@@ -114,6 +104,13 @@ Resources:
             Path: /test
             Method: post
             ApiId: !Ref HttpApi
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+          DB_PORT: !Ref ParamDBPort
 
   JiraAgentFunction:
     Type: AWS::Serverless::Function
@@ -125,7 +122,6 @@ Resources:
       Timeout: 30
       MemorySize: 512
       Layers:
-        - !Ref MyLayer
         - !Ref MyLibLayer
       Events:
         JiraPost:
@@ -151,7 +147,6 @@ Resources:
       Timeout: 30
       MemorySize: 512
       Layers:
-        - !Ref MyLayer
         - !Ref MyLibLayer
       Events:
         ComposioUserDataPost:
