@@ -26,13 +26,28 @@ jobs:
       - name: Install AWS SAM CLI
         uses: aws-actions/setup-sam@v2
 
-      # Configure AWS credentials (GitHub Secrets)
+      # Configure AWS credentials
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
+
+      # 🔍 Debug step to check if secrets are loading
+      - name: Debug AWS Secrets Loaded?
+        run: |
+          if [ -z "${{ secrets.AWS_ACCESS_KEY_ID }}" ]; then
+            echo "❌ ERROR: AWS_ACCESS_KEY_ID is EMPTY"
+          else
+            echo "✔ AWS_ACCESS_KEY_ID is PRESENT"
+          fi
+
+          if [ -z "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ]; then
+            echo "❌ ERROR: AWS_SECRET_ACCESS_KEY is EMPTY"
+          else
+            echo "✔ AWS_SECRET_ACCESS_KEY is PRESENT"
+          fi
 
       # Build SAM
       - name: Build SAM
