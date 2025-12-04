@@ -1,0 +1,92 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: HTTP API
+
+Parameters:
+  ParamDBHost:
+    Type: String
+
+  ParamDBUser:
+    Type: String
+
+  ParamDBPassword:
+    Type: String
+    NoEcho: true
+
+  ParamDBName:
+    Type: String
+
+  ParamDBPort:
+    Type: String
+    Default: "3306"
+
+
+Globals:
+  Function:
+    Timeout: 60
+    Handler: app.lambda_handler
+    Runtime: python3.9
+    Environment:
+      Variables:
+        DB_HOST: !Ref ParamDBHost
+        DB_USER: !Ref ParamDBUser
+        DB_PASSWORD: !Ref ParamDBPassword
+        DB_NAME: !Ref ParamDBName
+        DB_PORT: !Ref ParamDBPort
+
+
+Resources:
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      Auth: {}    # removed because JWT config was removed
+      CorsConfiguration:
+        AllowMethods: [GET, POST]
+        AllowOrigins: ["*"]
+        AllowHeaders: ["*"]
+
+  MyLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      ContentUri: common_code
+      CompatibleRuntimes: [python3.9]
+
+  MyLibLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      ContentUri: common_libraries
+      CompatibleRuntimes: [python3.9]
+    Metadata:
+      BuildMethod: python3.9
+
+  LambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-lambda-function"
+      CodeUri: hello_world/
+      Events:
+        RootGet:
+          Type: HttpApi
+          Properties:
+            Path: /
+            Method: get
+            ApiId: !Ref HttpApi
+      Layers:
+        - !Ref MyLayer
+        - !Ref MyLibLayer
+
+  SimpleAuthLambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-simple-auth"
+      CodeUri: hello_world/
+      Events:
+        RootGet:
+          Type: HttpApi
+          Properties:
+            Path: /simple
+            Method: get
+            ApiId: !Ref HttpApi
+      Layers:
+        - !Ref MyLayer
+        - !Ref MyLibLayer

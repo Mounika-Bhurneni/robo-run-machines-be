@@ -1,0 +1,78 @@
+name: Deploy SAM to AWS
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+
+jobs:
+  deploy:
+    name: Deploy to AWS Lambda
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout source
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Install Python
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      # Install AWS SAM CLI
+      - name: Install AWS SAM CLI
+        uses: aws-actions/setup-sam@v2
+
+      # Configure AWS credentials (GitHub Secrets)
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      # Build SAM
+      - name: Build SAM
+        run: sam build --use-container
+
+      # Determine environment
+      - name: Set environment variables
+        id: env
+        run: |
+          if [ "${{ github.ref }}" == "refs/heads/main" ]; then
+            echo "environment=prod" >> $GITHUB_OUTPUT
+          else
+            echo "environment=dev" >> $GITHUB_OUTPUT
+          fi
+
+      # Deploy SAM
+      - name: Deploy to AWS
+        run: |
+          if [ "${{ steps.env.outputs.environment }}" == "dev" ]; then
+            sam deploy \
+              --stack-name robo-dev \
+              --capabilities CAPABILITY_IAM \
+              --no-fail-on-empty-changeset \
+              --parameter-overrides \
+                ParamENV="dev" \
+                ParamDBHost="${{ secrets.DB_HOST }}" \
+                ParamDBUser="${{ secrets.DB_USER }}" \
+                ParamDBPassword="${{ secrets.DB_PASSWORD }}" \
+                ParamDBName="${{ secrets.DB_NAME }}" \
+                ParamDBPort="${{ secrets.DB_PORT }}"
+          else
+            sam deploy \
+              --stack-name robo-prod \
+              --capabilities CAPABILITY_IAM \
+              --no-fail-on-empty-changeset \
+              --parameter-overrides \
+                ParamENV="prod" \
+                ParamDBHost="${{ secrets.PROD_DB_HOST }}" \
+                ParamDBUser="${{ secrets.PROD_DB_USER }}" \
+                ParamDBPassword="${{ secrets.PROD_DB_PASSWORD }}" \
+                ParamDBName="${{ secrets.PROD_DB_NAME }}" \
+                ParamDBPort="${{ secrets.DB_PORT }}"
+          fi
