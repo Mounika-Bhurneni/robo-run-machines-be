@@ -5,27 +5,34 @@ Description: HTTP API
 Parameters:
   ParamDBHost:
     Type: String
-
   ParamDBUser:
     Type: String
-
   ParamDBPassword:
     Type: String
     NoEcho: true
-
   ParamDBName:
     Type: String
-
   ParamDBPort:
     Type: String
     Default: "3306"
 
+  # Composio and Jira
+  ParamComposioKey:
+    Type: String
+    NoEcho: true
+  ParamJiraInstanceUrl:
+    Type: String
+  ParamJiraEmail:
+    Type: String
+  ParamJiraApiToken:
+    Type: String
+    NoEcho: true
 
 Globals:
   Function:
     Timeout: 60
     Handler: app.lambda_handler
-    Runtime: python3.9
+    Runtime: python3.10   # FIXED: same runtime across functions
     Environment:
       Variables:
         DB_HOST: !Ref ParamDBHost
@@ -34,12 +41,11 @@ Globals:
         DB_NAME: !Ref ParamDBName
         DB_PORT: !Ref ParamDBPort
 
-
 Resources:
+
   HttpApi:
     Type: AWS::Serverless::HttpApi
     Properties:
-      Auth: {}    # removed because JWT config was removed
       CorsConfiguration:
         AllowMethods: [GET, POST]
         AllowOrigins: ["*"]
@@ -49,21 +55,26 @@ Resources:
     Type: AWS::Serverless::LayerVersion
     Properties:
       ContentUri: common_code
-      CompatibleRuntimes: [python3.9]
+      CompatibleRuntimes:
+        - python3.10
 
   MyLibLayer:
     Type: AWS::Serverless::LayerVersion
     Properties:
       ContentUri: common_libraries
-      CompatibleRuntimes: [python3.9]
+      CompatibleRuntimes:
+        - python3.10
     Metadata:
-      BuildMethod: python3.9
+      BuildMethod: python3.10
 
   LambdaFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub "${AWS::StackName}-lambda-function"
       CodeUri: hello_world/
+      Layers:
+        - !Ref MyLayer
+        - !Ref MyLibLayer
       Events:
         RootGet:
           Type: HttpApi
@@ -71,15 +82,15 @@ Resources:
             Path: /
             Method: get
             ApiId: !Ref HttpApi
-      Layers:
-        - !Ref MyLayer
-        - !Ref MyLibLayer
 
   SimpleAuthLambdaFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub "${AWS::StackName}-simple-auth"
       CodeUri: hello_world/
+      Layers:
+        - !Ref MyLayer
+        - !Ref MyLibLayer
       Events:
         RootGet:
           Type: HttpApi
@@ -87,10 +98,6 @@ Resources:
             Path: /simple
             Method: get
             ApiId: !Ref HttpApi
-      Layers:
-        - !Ref MyLayer
-        - !Ref MyLibLayer
-
 
   TestEndpointFunction:
     Type: AWS::Serverless::Function
@@ -100,7 +107,6 @@ Resources:
       Layers:
         - !Ref MyLayer
         - !Ref MyLibLayer
-
       Events:
         TestPost:
           Type: HttpApi
@@ -109,14 +115,55 @@ Resources:
             Method: post
             ApiId: !Ref HttpApi
 
+  JiraAgentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-jira-agent"
+      CodeUri: jira_agent/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 512
+      Layers:
+        - !Ref MyLayer
+        - !Ref MyLibLayer
+      Events:
+        JiraPost:
+          Type: HttpApi
+          Properties:
+            Path: /jira/agent
+            Method: post
+            ApiId: !Ref HttpApi
       Environment:
         Variables:
-          DB_HOST: !Ref ParamDBHost
-          DB_USER: !Ref ParamDBUser
-          DB_PASSWORD: !Ref ParamDBPassword
-          DB_NAME: !Ref ParamDBName
-          DB_PORT: !Ref ParamDBPort
+          COMPOSIO_API_KEY: !Ref ParamComposioKey
+          JIRA_INSTANCE_URL: !Ref ParamJiraInstanceUrl
+          JIRA_EMAIL: !Ref ParamJiraEmail
+          JIRA_API_TOKEN: !Ref ParamJiraApiToken
 
+  ComposioUserDataFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-composio-user-data"
+      CodeUri: composio_user/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 512
+      Layers:
+        - !Ref MyLayer
+        - !Ref MyLibLayer
+      Events:
+        ComposioUserDataPost:
+          Type: HttpApi
+          Properties:
+            Path: /composio/user/data
+            Method: post
+            ApiId: !Ref HttpApi
+      Environment:
+        Variables:
+          COMPOSIO_API_KEY: !Ref ParamComposioKey
+          COMPOSIO_BASE_URL: "https://api.composio.dev"
 
 Outputs:
   HttpApiUrl:
