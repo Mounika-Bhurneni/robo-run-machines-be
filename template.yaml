@@ -90,3 +90,35 @@ Resources:
       Layers:
         - !Ref MyLayer
         - !Ref MyLibLayer
+
+
+  TestEndpointFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-test-endpoint"
+      CodeUri: test_endpoint/
+      Layers:
+        - !Ref MyLayer
+        - !Ref MyLibLayer
+
+      Events:
+        TestPost:
+          Type: HttpApi
+          Properties:
+            Path: /test
+            Method: post
+            ApiId: !Ref HttpApi
+
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+          DB_PORT: !Ref ParamDBPort
+
+
+Outputs:
+  HttpApiUrl:
+    Description: "Base URL for the HTTP API"
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/"
