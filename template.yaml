@@ -37,6 +37,10 @@ Parameters:
     Type: String
     NoEcho: true
 
+  ParamGitHubWebhookSecret:
+    Type: String
+    NoEcho: true
+
 Globals:
   Function:
     Timeout: 60
@@ -241,6 +245,57 @@ Resources:
           USER_POOL_ID: !Ref ParamUserPoolId
           CLIENT_ID: !Ref ParamCognitoClientId
           CLIENT_SECRET: !Ref ParamCognitoClientSecret
+
+
+  JiraWebhookFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-jira-webhook"
+      CodeUri: jira_webhook/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 512
+      Events:
+        JiraWebhookPost:
+          Type: HttpApi
+          Properties:
+            Path: /jira/webhook
+            Method: post
+            ApiId: !Ref HttpApi   # Attach to SAME API as others
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+
+
+  GitHubWebhookFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-github-webhook"
+      CodeUri: github_webhook/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 512
+      Layers: [!Ref MyLibLayer]
+      Events:
+        GitHubWebhookPost:
+          Type: HttpApi
+          Properties:
+            Path: /github/webhook
+            Method: post
+            ApiId: !Ref HttpApi
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+          GITHUB_WEBHOOK_SECRET: !Ref ParamGitHubWebhookSecret
+
 
 Outputs:
   HttpApiUrl:
