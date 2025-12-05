@@ -27,6 +27,20 @@ Parameters:
   ParamJiraApiToken:
     Type: String
     NoEcho: true
+  ParamUserPoolId:
+    Type: String
+    Description: Cognito User Pool ID
+
+  ParamUserPoolId:
+    Type: String
+
+  ParamCognitoClientId:
+    Type: String
+
+  ParamCognitoClientSecret:
+    Type: String
+    NoEcho: true
+
 
 Globals:
   Function:
@@ -159,6 +173,54 @@ Resources:
         Variables:
           COMPOSIO_API_KEY: !Ref ParamComposioKey
           COMPOSIO_BASE_URL: "https://api.composio.dev"
+
+  CognitoCreateUserFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-cognito-create-user"
+      CodeUri: cognito_create_user/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 256
+      Policies:
+        - AmazonCognitoPowerUser
+      Events:
+        CreateUser:
+          Type: HttpApi
+          Properties:
+            Path: /cognito/create-user
+            Method: post
+            ApiId: !Ref HttpApi
+      Environment:
+        Variables:
+          USER_POOL_ID: !Ref ParamUserPoolId
+
+
+  CognitoLoginFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-cognito-login"
+      CodeUri: cognito_login/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 512
+      Layers:
+        - !Ref MyLibLayer
+      Events:
+        LoginPost:
+          Type: HttpApi
+          Properties:
+            Path: /auth/login
+            Method: post
+            ApiId: !Ref HttpApi
+      Environment:
+        Variables:
+          USER_POOL_ID: !Ref ParamUserPoolId
+          CLIENT_ID: !Ref ParamCognitoClientId
+          CLIENT_SECRET: !Ref ParamCognitoClientSecret
+
 
 Outputs:
   HttpApiUrl:
