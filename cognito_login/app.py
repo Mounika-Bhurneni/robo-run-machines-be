@@ -59,7 +59,7 @@ def lambda_handler(event, context):
             "body": json.dumps({
                 "message": "Login successful",
                 "auth_result": response["AuthenticationResult"]
-            })
+            },indent=2)
         }
 
     except cognito.exceptions.NotAuthorizedException:

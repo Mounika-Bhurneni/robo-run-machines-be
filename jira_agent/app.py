@@ -30,7 +30,9 @@ def lambda_handler(event, context):
         body = json.loads(event.get("body", "{}"))
         action = body.get("action")
         if not action:
-            return {"statusCode": 400, "body": json.dumps({"error": "Missing field: action"})}
+            return {"statusCode": 400, "body": json.dumps({"error": "Missing field: action", "intent": 2})}
+
+        result = {}
 
         # -------------------------
         # Fetch all projects
@@ -56,7 +58,7 @@ def lambda_handler(event, context):
         elif action == "fetch_issues":
             project_key = body.get("project_key")
             if not project_key:
-                return {"statusCode": 400, "body": json.dumps({"error": "Missing field: project_key"})}
+                return {"statusCode": 400, "body": json.dumps({"error": "Missing field: project_key", "intent": 2})}
             url = f"{JIRA_INSTANCE_URL}/rest/api/3/search"
             jql = f"project={project_key}"
             response = requests.get(url, headers=headers, auth=auth, params={"jql": jql, "maxResults": 100})
@@ -71,7 +73,7 @@ def lambda_handler(event, context):
             summary = body.get("issue_summary")
             description = body.get("issue_description", "")
             if not project_key or not summary:
-                return {"statusCode": 400, "body": json.dumps({"error": "Missing fields for create_issue: project_key or issue_summary"})}
+                return {"statusCode": 400, "body": json.dumps({"error": "Missing fields for create_issue: project_key or issue_summary", "intent": 2})}
             url = f"{JIRA_INSTANCE_URL}/rest/api/3/issue"
             payload = {
                 "fields": {
@@ -86,9 +88,10 @@ def lambda_handler(event, context):
             result = response.json()
 
         else:
-            return {"statusCode": 400, "body": json.dumps({"error": f"Unknown action: {action}"})}
+            return {"statusCode": 400, "body": json.dumps({"error": f"Unknown action: {action}", "intent": 2})}
 
-        return {"statusCode": 200, "body": json.dumps({"action": action, "result": result})}
+        # Add intent = 2 in the response
+        return {"statusCode": 200, "body": json.dumps({"action": action, "result": result, "intent": 2})}
 
     except requests.exceptions.RequestException as e:
-        return {"statusCode": 500, "body": json.dumps({"error": str(e)})}
+        return {"statusCode": 500, "body": json.dumps({"error": str(e), "intent": 2})}

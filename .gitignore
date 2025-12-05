@@ -65,3 +65,13 @@ pymysql-layer/
 python/
 .aws-sam/
 !utility/python/
+
+
+cmd.txt
+db.txt
+flow.txt
+env.json
+module.txt
+tables.sql
+techstack.txt
+socket prod.txt

@@ -16,7 +16,7 @@ Parameters:
     Type: String
     Default: "3306"
 
-  # Composio and Jira
+  # Composio & Jira
   ParamComposioKey:
     Type: String
     NoEcho: true
@@ -27,20 +27,15 @@ Parameters:
   ParamJiraApiToken:
     Type: String
     NoEcho: true
+
+  # Cognito
   ParamUserPoolId:
     Type: String
-    Description: Cognito User Pool ID
-
-  ParamUserPoolId:
-    Type: String
-
   ParamCognitoClientId:
     Type: String
-
   ParamCognitoClientSecret:
     Type: String
     NoEcho: true
-
 
 Globals:
   Function:
@@ -57,6 +52,9 @@ Globals:
 
 Resources:
 
+  # ===========================================================
+  # HTTP API with Cognito Authorizer
+  # ===========================================================
   HttpApi:
     Type: AWS::Serverless::HttpApi
     Properties:
@@ -64,23 +62,35 @@ Resources:
         AllowMethods: [GET, POST]
         AllowOrigins: ["*"]
         AllowHeaders: ["*"]
+      Auth:
+        Authorizers:
+          CognitoJwt:
+            JwtConfiguration:
+              issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${ParamUserPoolId}"
+              audience:
+                - !Ref ParamCognitoClientId
+            IdentitySource: "$request.header.Authorization"
 
+  # ===========================================================
+  # Common Layer
+  # ===========================================================
   MyLibLayer:
     Type: AWS::Serverless::LayerVersion
     Properties:
       ContentUri: common_libraries
-      CompatibleRuntimes:
-        - python3.10
+      CompatibleRuntimes: [python3.10]
     Metadata:
       BuildMethod: python3.10
 
+  # ===========================================================
+  # Simple Functions
+  # ===========================================================
   LambdaFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub "${AWS::StackName}-lambda-function"
       CodeUri: hello_world/
-      Layers:
-        - !Ref MyLibLayer
+      Layers: [!Ref MyLibLayer]
       Events:
         RootGet:
           Type: HttpApi
@@ -94,8 +104,7 @@ Resources:
     Properties:
       FunctionName: !Sub "${AWS::StackName}-simple-auth"
       CodeUri: hello_world/
-      Layers:
-        - !Ref MyLibLayer
+      Layers: [!Ref MyLibLayer]
       Events:
         RootGet:
           Type: HttpApi
@@ -104,13 +113,15 @@ Resources:
             Method: get
             ApiId: !Ref HttpApi
 
+  # ===========================================================
+  # Test Endpoint (Protected by Cognito)
+  # ===========================================================
   TestEndpointFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub "${AWS::StackName}-test-endpoint"
       CodeUri: test_endpoint/
-      Layers:
-        - !Ref MyLibLayer
+      Layers: [!Ref MyLibLayer]
       Events:
         TestPost:
           Type: HttpApi
@@ -118,6 +129,8 @@ Resources:
             Path: /test
             Method: post
             ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: CognitoJwt    # 🔐 ENABLE AUTH HERE
       Environment:
         Variables:
           DB_HOST: !Ref ParamDBHost
@@ -126,6 +139,9 @@ Resources:
           DB_NAME: !Ref ParamDBName
           DB_PORT: !Ref ParamDBPort
 
+  # ===========================================================
+  # Jira Agent
+  # ===========================================================
   JiraAgentFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -135,8 +151,7 @@ Resources:
       Runtime: python3.10
       Timeout: 30
       MemorySize: 512
-      Layers:
-        - !Ref MyLibLayer
+      Layers: [!Ref MyLibLayer]
       Events:
         JiraPost:
           Type: HttpApi
@@ -151,6 +166,9 @@ Resources:
           JIRA_EMAIL: !Ref ParamJiraEmail
           JIRA_API_TOKEN: !Ref ParamJiraApiToken
 
+  # ===========================================================
+  # Composio User Data
+  # ===========================================================
   ComposioUserDataFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -160,8 +178,7 @@ Resources:
       Runtime: python3.10
       Timeout: 30
       MemorySize: 512
-      Layers:
-        - !Ref MyLibLayer
+      Layers: [!Ref MyLibLayer]
       Events:
         ComposioUserDataPost:
           Type: HttpApi
@@ -173,7 +190,11 @@ Resources:
         Variables:
           COMPOSIO_API_KEY: !Ref ParamComposioKey
           COMPOSIO_BASE_URL: "https://api.composio.dev"
+          COMPOSIO_CACHE_DIR: "/tmp/.composio"
 
+  # ===========================================================
+  # Cognito Create User
+  # ===========================================================
   CognitoCreateUserFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -183,8 +204,7 @@ Resources:
       Runtime: python3.10
       Timeout: 30
       MemorySize: 256
-      Policies:
-        - AmazonCognitoPowerUser
+      Policies: [AmazonCognitoPowerUser]
       Events:
         CreateUser:
           Type: HttpApi
@@ -196,7 +216,9 @@ Resources:
         Variables:
           USER_POOL_ID: !Ref ParamUserPoolId
 
-
+  # ===========================================================
+  # Cognito Login Function
+  # ===========================================================
   CognitoLoginFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -206,8 +228,7 @@ Resources:
       Runtime: python3.10
       Timeout: 30
       MemorySize: 512
-      Layers:
-        - !Ref MyLibLayer
+      Layers: [!Ref MyLibLayer]
       Events:
         LoginPost:
           Type: HttpApi
@@ -220,7 +241,6 @@ Resources:
           USER_POOL_ID: !Ref ParamUserPoolId
           CLIENT_ID: !Ref ParamCognitoClientId
           CLIENT_SECRET: !Ref ParamCognitoClientSecret
-
 
 Outputs:
   HttpApiUrl:
