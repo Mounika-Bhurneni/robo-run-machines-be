@@ -6,6 +6,12 @@ import requests
 from collections import deque
 
 def lambda_handler(event, context):
+    claims = event["requestContext"]["authorizer"]["jwt"]["claims"]
+    user_email = claims.get("email")
+    sub = claims.get("sub")
+
+    print("user_email==>",user_email)
+    print("sub==>",sub)
     # Access environment variables
     db_host = os.environ.get("DB_HOST")
     db_user = os.environ.get("DB_USER")
