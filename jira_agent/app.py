@@ -72,20 +72,32 @@ def lambda_handler(event, context):
             project_key = body.get("project_key")
             summary = body.get("issue_summary")
             description = body.get("issue_description", "")
+            issuetype_name = body.get("issue_type", "Bug")  # default to Bug
+
             if not project_key or not summary:
-                return {"statusCode": 400, "body": json.dumps({"error": "Missing fields for create_issue: project_key or issue_summary", "intent": 2})}
+                return {
+                    "statusCode": 400,
+                    "body": json.dumps({
+                        "error": "Missing fields for create_issue: project_key or issue_summary",
+                        "intent": 2
+                    })
+                }
+
             url = f"{JIRA_INSTANCE_URL}/rest/api/3/issue"
             payload = {
                 "fields": {
                     "project": {"key": project_key},
                     "summary": summary,
                     "description": description,
-                    "issuetype": {"name": "Task"}
+                    "issuetype": {"name": issuetype_name}
                 }
             }
-            response = requests.post(url, headers=headers, auth=auth, data=json.dumps(payload))
+
+            # Use json=payload for correct JSON formatting
+            response = requests.post(url, headers=headers, auth=auth, json=payload)
             response.raise_for_status()
             result = response.json()
+
 
         else:
             return {"statusCode": 400, "body": json.dumps({"error": f"Unknown action: {action}", "intent": 2})}
