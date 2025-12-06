@@ -3,10 +3,11 @@ import boto3
 import os
 from datetime import datetime, date
 import psycopg2
-import uuid
+
 
 cognito = boto3.client("cognito-idp")
 USER_POOL_ID = os.environ["USER_POOL_ID"]
+
 
 # ==========================================================
 # PostgreSQL Connection
@@ -42,14 +43,12 @@ def lambda_handler(event, context):
         email = body.get("email")
         password = body.get("password")
         role = body.get("role")  # new
-        org_id = body.get("org_id")  # optional org_id
 
         if not email or not password or not role:
             return {
                 "statusCode": 400,
                 "body": json.dumps(
-                    {"error": "email, password and role are required"},
-                    cls=DateTimeEncoder
+                    {"error": "email, password and role are required"}
                 )
             }
 
@@ -59,8 +58,7 @@ def lambda_handler(event, context):
             return {
                 "statusCode": 400,
                 "body": json.dumps(
-                    {"error": f"Invalid role. Allowed: {allowed_roles}"},
-                    cls=DateTimeEncoder
+                    {"error": f"Invalid role. Allowed: {allowed_roles}"}
                 )
             }
 
@@ -97,63 +95,20 @@ def lambda_handler(event, context):
             GroupName=role
         )
 
-        # ----------------------------
-        # 4️⃣ Insert user into PostgreSQL users table
-        # ----------------------------
-        conn = None
-        cur = None
-        try:
-            conn = get_connection()
-            cur = conn.cursor()
-            insert_sql = """
-                INSERT INTO users (
-                    id, org_id, email, display_name, sso_id, role, created_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """
-            user_id = str(uuid.uuid4())
-            display_name = email.split("@")[0]  # optional: derive display name
-            sso_id = None  # assuming SSO id is None initially
-            created_at = datetime.utcnow()
-
-            cur.execute(insert_sql, (
-                user_id,
-                org_id,
-                email,
-                display_name,
-                sso_id,
-                role,
-                created_at
-            ))
-            conn.commit()
-        except Exception as db_e:
-            print("DB Insert Error:", str(db_e))
-            return {
-                "statusCode": 500,
-                "body": json.dumps(
-                    {"error": f"Cognito created but failed to insert user in DB: {str(db_e)}"},
-                    cls=DateTimeEncoder
-                )
-            }
-        finally:
-            if cur:
-                cur.close()
-            if conn:
-                conn.close()
-
         return {
             "statusCode": 200,
             "body": json.dumps(
                 {
-                    "message": "User created, assigned to role, and saved in DB successfully",
+                    "message": "User created and assigned to role successfully",
                     "assigned_role": role,
                     "user": response
                 },
-                cls=DateTimeEncoder
+                cls=DateTimeEncoder  # <-- serialize safely
             )
         }
 
     except Exception as e:
         return {
             "statusCode": 500,
-            "body": json.dumps({"error": str(e)}, cls=DateTimeEncoder)
+            "body": json.dumps({"error": str(e)})
         }

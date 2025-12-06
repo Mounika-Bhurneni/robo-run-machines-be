@@ -105,7 +105,6 @@ def handle_issue_created(issue):
         fields = issue.get("fields", {})
 
         # --- Fetch org_id ---
-        # Use 'organization.id' if available, otherwise fallback to project id
         org = fields.get("organization")
         if org and org.get("id"):
             org_id = str(org.get("id"))
@@ -113,47 +112,47 @@ def handle_issue_created(issue):
             project = fields.get("project")
             org_id = str(project.get("id")) if project and project.get("id") else None
 
-        # --- Fetch assignee_user_id ---
+        # --- Fetch assignee ---
         assignee = fields.get("assignee")
-        if assignee:
-            # Use id if available, else fallback to accountId
-            assignee_id = assignee.get("id") or assignee.get("accountId")
-        else:
-            assignee_id = None
+        assignee_id = assignee.get("id") or assignee.get("accountId") if assignee else None
+        assignee_name = assignee.get("displayName") if assignee else None
 
-        # --- Fetch reporter_user_id ---
+        # --- Fetch reporter ---
         reporter = fields.get("reporter")
-        if reporter:
-            reporter_id = reporter.get("id") or reporter.get("accountId")
-        else:
-            reporter_id = None
+        reporter_id = reporter.get("id") or reporter.get("accountId") if reporter else None
+        reporter_name = reporter.get("displayName") if reporter else None
 
         # --- Other fields ---
         status = fields.get("status", {}).get("name") if fields.get("status") else None
         priority = fields.get("priority", {}).get("name") if fields.get("priority") else None
-        components = json.dumps(fields.get("components") or [])  # ensure JSONB is valid
+        components = json.dumps(fields.get("components") or [])
 
         sql = """
             INSERT INTO jira_issues (
                 id, issue_key, org_id, assignee_user_id, reporter_user_id,
+                assignee_name, reporter_name,
                 status, priority, component, updated_at, raw
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (issue_key) DO UPDATE
             SET status = EXCLUDED.status,
                 priority = EXCLUDED.priority,
                 assignee_user_id = EXCLUDED.assignee_user_id,
                 reporter_user_id = EXCLUDED.reporter_user_id,
+                assignee_name = EXCLUDED.assignee_name,
+                reporter_name = EXCLUDED.reporter_name,
                 component = EXCLUDED.component,
                 updated_at = EXCLUDED.updated_at,
                 raw = EXCLUDED.raw
         """
 
         cur.execute(sql, (
-            str(issue.get("id")),  # issue ID as text
+            str(issue.get("id")),
             issue.get("key"),
             org_id,
             assignee_id,
             reporter_id,
+            assignee_name,
+            reporter_name,
             status,
             priority,
             components,
@@ -171,6 +170,7 @@ def handle_issue_created(issue):
             cur.close()
         if conn:
             conn.close()
+
 
 def handle_issue_updated(issue, changelog):
     print("Issue updated:", json.dumps(issue))

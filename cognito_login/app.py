@@ -48,18 +48,32 @@ def lambda_handler(event, context):
             }
         }
 
-        # If app client has a secret → add SECRET_HASH
+        # Add SECRET_HASH if client uses a secret
         if CLIENT_SECRET:
             params["AuthParameters"]["SECRET_HASH"] = calculate_secret_hash(email)
 
         response = cognito.initiate_auth(**params)
+        auth_result = response["AuthenticationResult"]
+
+        access_token = auth_result["AccessToken"]
+
+        # ----------------------------
+        # 🔥 Fetch user attributes (incl. role)
+        # ----------------------------
+        user_info = cognito.get_user(AccessToken=access_token)
+
+        role = None
+        for attr in user_info["UserAttributes"]:
+            if attr["Name"] == "custom:role":
+                role = attr["Value"]
 
         return {
             "statusCode": 200,
             "body": json.dumps({
                 "message": "Login successful",
-                "auth_result": response["AuthenticationResult"]
-            },indent=2)
+                "role": role,       # <-- Return role
+                "auth_result": auth_result
+            }, indent=2)
         }
 
     except cognito.exceptions.NotAuthorizedException:
