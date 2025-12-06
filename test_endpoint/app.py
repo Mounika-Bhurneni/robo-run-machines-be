@@ -1,39 +1,68 @@
 import os
 import json
-import datetime
-import pymysql
-import requests
-from collections import deque
+import psycopg2
+
+ALLOWED_ROLES = ["DEV", "QA", "MANAGER", "DEV_MANAGER"]
+
+# ==========================================================
+# PostgreSQL Connection
+# ==========================================================
+def get_connection():
+    try:
+        conn = psycopg2.connect(
+            host=os.environ["DB_HOST"],
+            user=os.environ["DB_USER"],
+            password=os.environ["DB_PASSWORD"],
+            dbname=os.environ["DB_NAME"],
+            port=5432
+        )
+        return conn
+    except Exception as e:
+        print("DB Connection Error:", str(e))
+        raise
 
 def lambda_handler(event, context):
-    claims = event["requestContext"]["authorizer"]["jwt"]["claims"]
-    user_email = claims.get("email")
-    sub = claims.get("sub")
+    try:
+        # Extract JWT claims
+        claims = event.get("requestContext", {}).get("authorizer", {}).get("jwt", {}).get("claims", {})
+        user_email = claims.get("email")
+        user_role = claims.get("custom:role")  # Cognito custom role
+        sub = claims.get("sub")
 
-    print("user_email==>",user_email)
-    print("sub==>",sub)
-    # Access environment variables
-    db_host = os.environ.get("DB_HOST")
-    db_user = os.environ.get("DB_USER")
-    db_password = os.environ.get("DB_PASSWORD")
-    db_name = os.environ.get("DB_NAME")
-    db_port = os.environ.get("DB_PORT")
+        print("User Email:", user_email)
+        print("User Role:", user_role)
+        print("sub:", sub)
 
-    # Print them (these will appear in CloudWatch logs)
-    print("DB_HOST:", db_host)
-    print("DB_USER:", db_user)
-    print("DB_PASSWORD:", "[HIDDEN]")  # avoid printing sensitive info
-    print("DB_NAME:", db_name)
-    print("DB_PORT:", db_port)
+        # Role-based access control
+        if not user_role or user_role not in ALLOWED_ROLES:
+            return {
+                "statusCode": 403,
+                "body": json.dumps({"error": "Access denied. Your role does not allow access."})
+            }
 
-    # Return them in response if needed (optional, avoid sending passwords in response)
-    return {
-        "statusCode": 200,
-        "body": json.dumps({
-            "message": "hello there",
-            "DB_HOST": db_host,
-            "DB_USER": db_user,
-            "DB_NAME": db_name,
-            "DB_PORT": db_port
-        }),
-    }
+        # Connect to PostgreSQL
+        conn = get_connection()
+        cur = conn.cursor()
+
+        # Example query: fetch user info
+        cur.execute("SELECT id, email, role, created_at FROM users WHERE email=%s", (user_email,))
+        user_record = cur.fetchone()
+
+        cur.close()
+        conn.close()
+
+        return {
+            "statusCode": 200,
+            "body": json.dumps({
+                "message": f"Hello {user_email}, you have access.",
+                "user_role": user_role,
+                "user_record": user_record
+            }, default=str)
+        }
+
+    except Exception as e:
+        print("Error:", str(e))
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": str(e)})
+        }
