@@ -74,7 +74,7 @@ def lambda_handler(event, context):
             if github_event == "push":
                 repo = payload["repository"]["full_name"]
                 commits = payload.get("commits", [])
-                print(f"Push event → {len(commits)} commits. ")
+                print(f"Push eve→ {len(commits)} commits. ")
 
                 for c in commits:
                     commit_id = str(uuid.uuid4())
