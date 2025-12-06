@@ -33,7 +33,7 @@ def lambda_handler(event, context):
 
     print("-----DEBUG------")
     print("Headers:", headers)
-    print("Body:", body[:300])
+    print("Body:===>", body[:300])
     print("Signature:", headers.get("X-Hub-Signature-256"))
     print("----------------")
 
