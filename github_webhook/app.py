@@ -41,7 +41,7 @@ def lambda_handler(event, context):
     if event.get("isBase64Encoded", False):
         body = base64.b64decode(body).decode("utf-8")
 
-    print("Body preview:", body[:300])
+    print("Body preview:==>", body[:300])
 
     # Validate GitHub Signature
     if not verify_signature(body, headers):
