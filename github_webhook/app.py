@@ -2,7 +2,7 @@ import json
 import hmac
 import hashlib
 import os
-
+import base64
 
 # Handles all GitHub events:
 # push
@@ -15,7 +15,7 @@ import os
 # forks
 
 def verify_signature(event_body, headers):
-    secret = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
+    secret = os.environ.get("GITHUB_WEBHOOK_SECRET", "my_super_secret_key")
     signature = headers.get("X-Hub-Signature-256", "")
 
     if not signature:
@@ -30,6 +30,9 @@ def verify_signature(event_body, headers):
 def lambda_handler(event, context):
     headers = event.get("headers", {})
     body = event.get("body", "")
+
+    if event.get("isBase64Encoded", False):
+        body = base64.b64decode(body).decode("utf-8")
 
     # Validate GitHub signature
     if not verify_signature(body, headers):
