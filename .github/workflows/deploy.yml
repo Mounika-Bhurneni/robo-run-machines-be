@@ -71,6 +71,7 @@ jobs:
               --stack-name robo-dev \
               --capabilities CAPABILITY_IAM \
               --no-fail-on-empty-changeset \
+              --no-confirm-changeset \
               --parameter-overrides \
                 ParamENV="dev" \
                 ParamDBHost="${{ secrets.DB_HOST }}" \
@@ -92,6 +93,7 @@ jobs:
               --stack-name robo-prod \
               --capabilities CAPABILITY_IAM \
               --no-fail-on-empty-changeset \
+              --no-confirm-changeset \
               --parameter-overrides \
                 ParamENV="prod" \
                 ParamDBHost="${{ secrets.PROD_DB_HOST }}" \
