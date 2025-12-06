@@ -41,6 +41,10 @@ Parameters:
     Type: String
     NoEcho: true
 
+  ParamServiceNowWebhookSecret:
+    Type: String
+    NoEcho: true
+
 Globals:
   Function:
     Timeout: 60
@@ -295,6 +299,32 @@ Resources:
           DB_PASSWORD: !Ref ParamDBPassword
           DB_NAME: !Ref ParamDBName
           GITHUB_WEBHOOK_SECRET: !Ref ParamGitHubWebhookSecret
+
+
+  ServiceNowWebhookFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-servicenow-webhook"
+      CodeUri: servicenow_webhook/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 512
+      Layers: [!Ref MyLibLayer]
+      Events:
+        ServiceNowWebhookPost:
+          Type: HttpApi
+          Properties:
+            Path: /servicenow/webhook
+            Method: post
+            ApiId: !Ref HttpApi
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+          SERVICENOW_WEBHOOK_SECRET: !Ref ParamServiceNowWebhookSecret
 
 
 Outputs:
