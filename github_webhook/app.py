@@ -9,7 +9,7 @@ import psycopg2
 import psycopg2.extras
 
 # ==========================================================
-# 1. PostgreSQL Connection
+# 1. PostgreSQL Connection. 
 # ==========================================================
 def get_connection():
     try:
