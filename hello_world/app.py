@@ -12,6 +12,6 @@ def lambda_handler(event, context):
     return {
         "statusCode": 200,
         "body": json.dumps({
-            "message":"Robo run machine cicd test-3->",
+            "message":"Robo run machine cicd test-4->",
         }),
     }
