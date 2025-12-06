@@ -1,8 +1,30 @@
 import json
+import os
+import psycopg2
+from datetime import datetime
 
+# ==========================================================
+# PostgreSQL Connection
+# ==========================================================
+def get_connection():
+    try:
+        conn = psycopg2.connect(
+            host=os.environ["DB_HOST"],
+            user=os.environ["DB_USER"],
+            password=os.environ["DB_PASSWORD"],
+            dbname=os.environ["DB_NAME"],
+            port=5432
+        )
+        return conn
+    except Exception as e:
+        print("DB Connection Error:", str(e))
+        raise
+
+# ==========================================================
+# Lambda Handler
+# ==========================================================
 def lambda_handler(event, context):
     print("Raw Event:", json.dumps(event))
-
     try:
         body = json.loads(event.get("body", "{}"))
         webhook_event = body.get("webhookEvent")
@@ -10,172 +32,249 @@ def lambda_handler(event, context):
         comment = body.get("comment")
         changelog = body.get("changelog")
         sprint = body.get("sprint")
+        worklog = body.get("worklog")
 
         print("Webhook Event:", webhook_event)
 
-        # ---- EVENT DISPATCHER ---- #
-        if webhook_event in ["jira:issue_created"]:
+        # ---- ISSUE EVENTS ---- #
+        if webhook_event == "jira:issue_created":
             handle_issue_created(issue)
-
-        elif webhook_event in ["jira:issue_updated"]:
+        elif webhook_event == "jira:issue_updated":
             handle_issue_updated(issue, changelog)
-
-        elif webhook_event in ["jira:issue_deleted"]:
+        elif webhook_event == "jira:issue_deleted":
             handle_issue_deleted(issue)
 
-        # ---------------- Sprint Events ---------------- #
-        elif webhook_event in [
-            "sprint_created",
-            "sprint_deleted",
-            "sprint_updated",
-            "sprint_started",
-            "sprint_closed"
-        ]:
+        # ---- SPRINT EVENTS ---- #
+        elif webhook_event in ["sprint_created", "sprint_updated", "sprint_deleted", "sprint_started", "sprint_closed"]:
             handle_sprint_events(webhook_event, sprint)
 
-        # ---------------- Comment Events ---------------- #
-        elif webhook_event in ["comment_created"]:
-            handle_comment_created(issue, comment)
+        # ---- COMMENT EVENTS ---- #
+        elif webhook_event in ["comment_created", "comment_updated", "comment_deleted"]:
+            handle_comment_events(webhook_event, issue, comment)
 
-        elif webhook_event in ["comment_updated"]:
-            handle_comment_updated(issue, comment)
+        # ---- VOTING/WATCHING ---- #
+        elif webhook_event in ["issue_vote_changed", "issue_watch_changed"]:
+            handle_vote_watch_events(webhook_event, issue)
 
-        elif webhook_event in ["comment_deleted"]:
-            handle_comment_deleted(issue, comment)
-
-        # ---------------- Voting / Watching ---------------- #
-        elif webhook_event in ["issue_vote_changed"]:
-            handle_issue_vote_changed(issue)
-
-        elif webhook_event in ["issue_watch_changed"]:
-            handle_issue_watch_changed(issue)
-
-        # ---------------- Issue Links ---------------- #
+        # ---- ISSUE LINKS ---- #
         elif webhook_event in ["issue_link_created", "issue_link_deleted"]:
             handle_issue_links(webhook_event, body)
 
-        # ---------------- Subtasks ---------------- #
+        # ---- SUBTASKS ---- #
         elif webhook_event in ["subtask_created", "subtask_updated", "subtask_deleted"]:
             handle_subtask_events(webhook_event, issue)
 
-        # ---------------- Time Tracking ---------------- #
+        # ---- WORKLOG ---- #
         elif webhook_event in ["worklog_created", "worklog_updated", "worklog_deleted"]:
-            handle_time_tracking(webhook_event, issue, body.get("worklog"))
+            handle_worklog_events(webhook_event, issue, worklog)
 
-        elif webhook_event in ["timetrackingprovider_update"]:
+        # ---- TIMETRACKING PROVIDER ---- #
+        elif webhook_event == "timetrackingprovider_update":
             handle_timetracking_provider(body)
 
-        # ---------------- Feature status change ---------------- #
+        # ---- FEATURE TOGGLE ---- #
         elif webhook_event in ["feature_flag_enabled", "feature_flag_disabled"]:
             handle_feature_toggle(webhook_event, body)
 
         else:
             print("Unhandled event:", webhook_event)
 
-        return {
-            "statusCode": 200,
-            "body": json.dumps({"message": "Webhook received"})
-        }
+        return {"statusCode": 200, "body": json.dumps({"message": "Webhook received"})}
 
     except Exception as e:
         print("Error:", str(e))
-        return {
-            "statusCode": 500,
-            "body": json.dumps({"error": "Internal server error"})
-        }
+        return {"statusCode": 500, "body": json.dumps({"error": "Internal server error"})}
 
 
-
-# ======================================================
-# HANDLERS FOR ALL EVENTS
-# ======================================================
+# ==========================================================
+# ISSUE HANDLERS
+# ==========================================================
 
 def handle_issue_created(issue):
-    print("Issue created:", json.dumps(issue))
-    # TODO: Insert into DB
+    import json
+    from datetime import datetime
 
+    print("Issue created:", json.dumps(issue))
+    conn = None
+    cur = None
+
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+
+        fields = issue.get("fields", {})
+
+        # --- Fetch org_id ---
+        # Use 'organization.id' if available, otherwise fallback to project id
+        org = fields.get("organization")
+        if org and org.get("id"):
+            org_id = str(org.get("id"))
+        else:
+            project = fields.get("project")
+            org_id = str(project.get("id")) if project and project.get("id") else None
+
+        # --- Fetch assignee_user_id ---
+        assignee = fields.get("assignee")
+        if assignee:
+            # Use id if available, else fallback to accountId
+            assignee_id = assignee.get("id") or assignee.get("accountId")
+        else:
+            assignee_id = None
+
+        # --- Fetch reporter_user_id ---
+        reporter = fields.get("reporter")
+        if reporter:
+            reporter_id = reporter.get("id") or reporter.get("accountId")
+        else:
+            reporter_id = None
+
+        # --- Other fields ---
+        status = fields.get("status", {}).get("name") if fields.get("status") else None
+        priority = fields.get("priority", {}).get("name") if fields.get("priority") else None
+        components = json.dumps(fields.get("components") or [])  # ensure JSONB is valid
+
+        sql = """
+            INSERT INTO jira_issues (
+                id, issue_key, org_id, assignee_user_id, reporter_user_id,
+                status, priority, component, updated_at, raw
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (issue_key) DO UPDATE
+            SET status = EXCLUDED.status,
+                priority = EXCLUDED.priority,
+                assignee_user_id = EXCLUDED.assignee_user_id,
+                reporter_user_id = EXCLUDED.reporter_user_id,
+                component = EXCLUDED.component,
+                updated_at = EXCLUDED.updated_at,
+                raw = EXCLUDED.raw
+        """
+
+        cur.execute(sql, (
+            str(issue.get("id")),  # issue ID as text
+            issue.get("key"),
+            org_id,
+            assignee_id,
+            reporter_id,
+            status,
+            priority,
+            components,
+            datetime.utcnow(),
+            json.dumps(issue)
+        ))
+
+        conn.commit()
+        print(f"Issue {issue.get('key')} inserted/updated.")
+
+    except Exception as e:
+        print("Error in handle_issue_created:", str(e))
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 def handle_issue_updated(issue, changelog):
     print("Issue updated:", json.dumps(issue))
-    print("Changelog:", json.dumps(changelog))
-    # TODO: Update DB record
+    handle_issue_created(issue)  # same logic as create
 
 
 def handle_issue_deleted(issue):
     print("Issue deleted:", json.dumps(issue))
-    # TODO: Delete from DB
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        sql = "DELETE FROM jira_issues WHERE issue_key = %s"
+        cur.execute(sql, (issue.get("key"),))
+        conn.commit()
+        cur.close()
+        conn.close()
+        print(f"Issue {issue.get('key')} deleted.")
+    except Exception as e:
+        print("Error in handle_issue_deleted:", str(e))
 
 
-
-# ---------- Sprint Events ---------- #
-
+# ==========================================================
+# SPRINT HANDLER
+# ==========================================================
 def handle_sprint_events(event, sprint):
     print(f"Sprint event: {event}", json.dumps(sprint))
-    # TODO: Store sprint changes in DB
+    # TODO: Insert/update sprint info into separate sprint table
 
 
+# ==========================================================
+# COMMENT HANDLER
+# ==========================================================
+def handle_comment_events(event, issue, comment):
+    print(f"Comment event: {event}", json.dumps(comment))
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        sql = """
+            INSERT INTO jira_comments (
+                id, issue_key, author_user_id, body, updated_at, raw
+            ) VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (id) DO UPDATE
+            SET body = EXCLUDED.body,
+                updated_at = EXCLUDED.updated_at,
+                raw = EXCLUDED.raw
+        """
+        cur.execute(sql, (
+            comment.get("id"),
+            issue.get("key"),
+            comment.get("author", {}).get("id"),
+            comment.get("body"),
+            datetime.utcnow(),
+            json.dumps(comment)
+        ))
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print("Error in handle_comment_events:", str(e))
 
-# ---------- Comments ---------- #
 
-def handle_comment_created(issue, comment):
-    print("Comment created:", json.dumps(comment))
-    # TODO: Insert comment into DB
-
-def handle_comment_updated(issue, comment):
-    print("Comment updated:", json.dumps(comment))
-    # TODO: Update comment in DB
-
-def handle_comment_deleted(issue, comment):
-    print("Comment deleted:", json.dumps(comment))
-    # TODO: Delete comment from DB
+# ==========================================================
+# VOTING / WATCH HANDLER
+# ==========================================================
+def handle_vote_watch_events(event, issue):
+    print(f"Vote/Watch event: {event}", json.dumps(issue))
+    # TODO: Update votes/watchers table
 
 
-
-# ---------- Votes / Watches ---------- #
-
-def handle_issue_vote_changed(issue):
-    print("Vote changed:", issue["id"])
-    # TODO: Update vote counter
-
-def handle_issue_watch_changed(issue):
-    print("Watch changed:", issue["id"])
-    # TODO: Update watchers list
-
-
-
-# ---------- Issue Links ---------- #
+# ==========================================================
+# ISSUE LINKS HANDLER
+# ==========================================================
 def handle_issue_links(event, body):
-    print("Issue link event:", event)
-    print("Body:", json.dumps(body))
-    # TODO: Store link relation
+    print(f"Issue link event: {event}", json.dumps(body))
+    # TODO: Insert/update issue_links table
 
 
-
-# ---------- Subtasks ---------- #
+# ==========================================================
+# SUBTASK HANDLER
+# ==========================================================
 def handle_subtask_events(event, issue):
-    print("Subtask event:", event)
-    print("Issue:", json.dumps(issue))
-    # TODO: Update/insert subtask info
+    print(f"Subtask event: {event}", json.dumps(issue))
+    # TODO: Insert/update subtasks table
 
 
+# ==========================================================
+# WORKLOG HANDLER
+# ==========================================================
+def handle_worklog_events(event, issue, worklog):
+    print(f"Worklog event: {event}", json.dumps(worklog))
+    # TODO: Insert/update worklogs table
 
-# ---------- Time Tracking ---------- #
 
-def handle_time_tracking(event, issue, worklog):
-    print("Time tracking event:", event)
-    print("Worklog:", json.dumps(worklog))
-    # TODO: Insert/update time log
-
-
+# ==========================================================
+# TIMETRACKING PROVIDER
+# ==========================================================
 def handle_timetracking_provider(body):
-    print("Provider updated:", json.dumps(body))
-    # TODO: Update provider info
+    print("Timetracking provider update:", json.dumps(body))
+    # TODO: Update timetracking provider info
 
 
-
-# ---------- Feature toggles ---------- #
-
+# ==========================================================
+# FEATURE TOGGLE
+# ==========================================================
 def handle_feature_toggle(event, body):
-    print("Feature toggle:", event)
-    print("Body:", json.dumps(body))
-    # TODO: Track feature toggle
+    print("Feature toggle event:", event, json.dumps(body))
+    # TODO: Track feature toggle changes
