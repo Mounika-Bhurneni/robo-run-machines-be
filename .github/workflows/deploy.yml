@@ -108,3 +108,4 @@ jobs:
                 ParamCognitoClientSecret="${{ secrets.COGNITO_CLIENT_SECRET }}" \
                 ParamGitHubWebhookSecret="${{ secrets.WEBHOOK_SECRET_GITHUB }}" \
                 ParamServiceNowWebhookSecret="${{ secrets.WEBHOOK_SECRET_SERVICENOW }}"
+          fi
