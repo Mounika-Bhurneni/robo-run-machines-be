@@ -34,7 +34,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      # 🔍 Debug step to check if secrets are loading
+      # Debug AWS secrets
       - name: Debug AWS Secrets Loaded?
         run: |
           if [ -z "${{ secrets.AWS_ACCESS_KEY_ID }}" ]; then
@@ -57,15 +57,16 @@ jobs:
       - name: Set environment variables
         id: env
         run: |
-          if [ "${{ github.ref }}" == "refs/heads/main" ]; then
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
             echo "environment=prod" >> $GITHUB_OUTPUT
           else
             echo "environment=dev" >> $GITHUB_OUTPUT
+          fi
 
       # Deploy SAM
       - name: Deploy to AWS
         run: |
-          if [ "${{ steps.env.outputs.environment }}" == "dev" ]; then
+          if [ "${{ steps.env.outputs.environment }}" = "dev" ]; then
             sam deploy \
               --stack-name robo-dev \
               --capabilities CAPABILITY_IAM \
