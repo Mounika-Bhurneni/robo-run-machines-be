@@ -31,6 +31,12 @@ def lambda_handler(event, context):
     headers = event.get("headers", {})
     body = event.get("body", "")
 
+    print("-----DEBUG------")
+    print("Headers:", headers)
+    print("Body:", body[:300])
+    print("Signature:", headers.get("X-Hub-Signature-256"))
+    print("----------------")
+
     if event.get("isBase64Encoded", False):
         body = base64.b64decode(body).decode("utf-8")
 
