@@ -96,6 +96,7 @@ def lambda_handler(event, context):
                 ))
 
             if github_event == "push":
+                print("push======>",payload)
                 for c in payload.get("commits", []):
                     commit_id = str(uuid.uuid4())
                     commit_sha = c["id"]
@@ -157,7 +158,7 @@ def lambda_handler(event, context):
                 github_id = run["id"]
                 author_email = run["head_repository"]["owner"]["login"]
                 message = f"Workflow run {run['name']} → {run['status']} / {run.get('conclusion')}"
-                upsert_record(github_id, author_email, message, commit_sha=run.get("head_sha"))
+                # upsert_record(github_id, author_email, message, commit_sha=run.get("head_sha"))
 
             elif github_event == "workflow_job":
                 job = payload["workflow_job"]
