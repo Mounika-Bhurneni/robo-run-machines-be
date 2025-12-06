@@ -16,7 +16,8 @@
         "cloudformation:*",
         "lambda:*",
         "s3:*",
-        "cognito-idp:*"
+        "cognito-idp:*",
+        "apigateway:*"
       ],
       "Resource": "*"
     }
