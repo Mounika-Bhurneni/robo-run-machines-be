@@ -52,7 +52,7 @@ def lambda_handler(event, context):
 
     # Correct GitHub event header
     github_event = headers.get("x-github-event", "unknown")
-    print("🔥 GitHub event received:", github_event)
+    print("GitHub event received:", github_event)
 
     payload = json.loads(body)
 
