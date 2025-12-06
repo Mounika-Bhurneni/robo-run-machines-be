@@ -85,7 +85,7 @@ def lambda_handler(event, context):
                     timestamp = datetime.utcnow()
 
                     sql = """
-                        INSERT INTO git_commits 
+                        INSERT INTO github_events 
                         (id, repo, commit_sha, author_email, message, files, timestamp, raw)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     """
