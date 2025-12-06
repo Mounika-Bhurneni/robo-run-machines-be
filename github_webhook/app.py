@@ -3,84 +3,134 @@ import hmac
 import hashlib
 import os
 import base64
+import uuid
+from datetime import datetime
 
-# -----------------------------------
-# Validate Signature
-# -----------------------------------
+# ==========================================================
+# 1. MySQL Connection (pymysql)
+# ==========================================================
+import pymysql
+
+def get_connection():
+    return pymysql.connect(
+        host=os.environ["DB_HOST"],
+        user=os.environ["DB_USER"],
+        password=os.environ["DB_PASSWORD"],
+        database=os.environ["DB_NAME"],
+        port=3306,
+        cursorclass=pymysql.cursors.DictCursor,
+        autocommit=True
+    )
+
+
+# ==========================================================
+# 2. GitHub Signature Validation
+# ==========================================================
 def verify_signature(event_body, headers):
-    secret = os.environ.get("GITHUB_WEBHOOK_SECRET", "my_super_secret_key")
-
-    # API Gateway lowercases header names
+    secret = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
     signature = headers.get("x-hub-signature-256", "")
 
     if not signature:
-        print("❌ Missing signature header")
+        print("❌ Missing signature header x-hub-signature-256")
         return False
 
-    mac = hmac.new(secret.encode(), msg=event_body.encode(), digestmod=hashlib.sha256)
-    expected = f"sha256={mac.hexdigest()}"
+    mac = hmac.new(
+        secret.encode(),
+        msg=event_body.encode(),
+        digestmod=hashlib.sha256
+    )
 
-    print("Expected signature:", expected)
-    print("Received signature:", signature)
+    expected = f"sha256={mac.hexdigest()}"
 
     return hmac.compare_digest(expected, signature)
 
 
-# -----------------------------------
-# Lambda Entry
-# -----------------------------------
+# ==========================================================
+# 3. Lambda Handler
+# ==========================================================
 def lambda_handler(event, context):
 
-    headers = event.get("headers", {})
-    # Convert header keys to lowercase (API Gateway inconsistent sometimes)
-    headers = {k.lower(): v for k, v in headers.items()}
+    # Normalize headers to lowercase
+    headers = {k.lower(): v for k, v in event.get("headers", {}).items()}
 
+    # Handle body (base64 or plain)
     body = event.get("body", "")
-
-    # Base64 decode if needed
     if event.get("isBase64Encoded", False):
         body = base64.b64decode(body).decode("utf-8")
 
-    print("Body preview:==>", body[:300])
+    print("Body:", body[:200])
 
-    # Validate GitHub Signature
+    # Verify GitHub Signature
     if not verify_signature(body, headers):
         return {
             "statusCode": 401,
             "body": json.dumps({"error": "Invalid GitHub signature"})
         }
 
-    # Correct GitHub event header
     github_event = headers.get("x-github-event", "unknown")
-    print("GitHub event received:", github_event)
+    print("GitHub Event:", github_event)
 
     payload = json.loads(body)
 
-    # -----------------------------------
-    # Handle Events
-    # -----------------------------------
+    # ======================================================
+    # 🔥 HANDLE PUSH EVENT
+    # ======================================================
     if github_event == "push":
-        print("Push event:")
-        print("Repo:", payload["repository"]["full_name"])
-        print("Commits:", len(payload.get("commits", [])))
+        repo = payload["repository"]["full_name"]
+        commits = payload.get("commits", [])
 
+        print(f"Push event received → {len(commits)} commits")
+
+        if commits:
+            conn = get_connection()
+            cur = conn.cursor()
+
+            for c in commits:
+
+                commit_id = str(uuid.uuid4())  # MySQL → UUID stored as string
+                commit_sha = c["id"]
+                author_email = c["author"]["email"]
+                message = c["message"]
+
+                files = c.get("modified", []) + c.get("added", []) + c.get("removed", [])
+
+                timestamp = datetime.utcnow()
+
+                sql = """
+                    INSERT INTO github_events 
+                    (id, repo, commit_sha, author_email, message, files, timestamp, raw)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """
+
+                cur.execute(sql, (
+                    commit_id,
+                    repo,
+                    commit_sha,
+                    author_email,
+                    message,
+                    json.dumps(files),     # store list as JSON
+                    timestamp,
+                    json.dumps(c)          # raw commit JSON
+                ))
+
+            cur.close()
+            conn.close()
+            print("Commits inserted into MySQL successfully.")
+
+    # ======================================================
+    # Other GitHub Events (log only)
+    # ======================================================
     elif github_event == "pull_request":
-        print(f"PR #{payload['number']} {payload['action']}")
+        print(f"Pull Request #{payload['number']} → {payload['action']}")
 
     elif github_event == "workflow_job":
-        print("Workflow job event")
-        print("Status:", payload["workflow_job"]["status"])
-        print("Conclusion:", payload["workflow_job"]["conclusion"])
+        print("Workflow Job Status:", payload["workflow_job"]["status"])
 
     elif github_event == "workflow_run":
-        print("Workflow run:")
-        print("Status:", payload["workflow_run"]["status"])
-        print("Conclusion:", payload["workflow_run"]["conclusion"])
+        print("Workflow Run Status:", payload["workflow_run"]["status"])
 
     else:
-        print("Unhandled event:", github_event)
-
-    # you can save to DB here...
+        print("Unhandled GitHub Event:", github_event)
 
     return {
         "statusCode": 200,
