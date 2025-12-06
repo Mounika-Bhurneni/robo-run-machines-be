@@ -97,11 +97,38 @@ def lambda_handler(event, context):
 
             if github_event == "push":
                 for c in payload.get("commits", []):
-                    github_id = c["id"]
+                    commit_id = str(uuid.uuid4())
+                    commit_sha = c["id"]
                     author_email = c["author"]["email"]
+                    github_id = c["author"].get("id")  # numeric GitHub ID (BIGINT)
                     message = c["message"]
                     files = c.get("modified", []) + c.get("added", []) + c.get("removed", [])
-                    upsert_record(github_id, author_email, message, commit_sha=github_id, files=files)
+                    timestamp = datetime.utcnow()
+
+                    sql = """
+                        INSERT INTO github_events
+                        (id, github_id, repo, commit_sha, author_email, message, files, timestamp, raw)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (github_id, repo) DO UPDATE
+                        SET commit_sha = EXCLUDED.commit_sha,
+                            author_email = EXCLUDED.author_email,
+                            message = EXCLUDED.message,
+                            files = EXCLUDED.files,
+                            timestamp = EXCLUDED.timestamp,
+                            raw = EXCLUDED.raw
+                    """
+                    cur.execute(sql, (
+                        commit_id,
+                        github_id,
+                        repo,
+                        commit_sha,
+                        author_email,
+                        message,
+                        json.dumps(files),
+                        timestamp,
+                        json.dumps(c)
+                    ))
+
                 print("Push commits upserted successfully.")
 
             elif github_event == "pull_request":
