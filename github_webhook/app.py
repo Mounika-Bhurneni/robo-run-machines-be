@@ -12,13 +12,18 @@ import psycopg2.extras
 # 1. PostgreSQL Connection
 # ==========================================================
 def get_connection():
-    return psycopg2.connect(
-        host=os.environ["DB_HOST"],
-        user=os.environ["DB_USER"],
-        password=os.environ["DB_PASSWORD"],
-        dbname=os.environ["DB_NAME"],
-        port=5432
-    )
+    try:
+        conn = psycopg2.connect(
+            host=os.environ["DB_HOST"],
+            user=os.environ["DB_USER"],
+            password=os.environ["DB_PASSWORD"],
+            dbname=os.environ["DB_NAME"],
+            port=5432
+        )
+        return conn
+    except Exception as e:
+        print("DB Connection Error:", str(e))
+        raise
 
 # ==========================================================
 # 2. GitHub Signature Validation
@@ -64,20 +69,46 @@ def lambda_handler(event, context):
         conn = get_connection()
         cur = conn.cursor()
 
-        # ======================================================
-        # 🔥 PUSH EVENT → commits
-        # ======================================================
-        if github_event == "push":
-            repo = payload["repository"]["full_name"]
-            commits = payload.get("commits", [])
-            print(f"Push event → {len(commits)} commits")
+        try:
+            # Handle each GitHub event type safely
+            if github_event == "push":
+                repo = payload["repository"]["full_name"]
+                commits = payload.get("commits", [])
+                print(f"Push event → {len(commits)} commits")
 
-            for c in commits:
-                commit_id = str(uuid.uuid4())
-                commit_sha = c["id"]
-                author_email = c["author"]["email"]
-                message = c["message"]
-                files = c.get("modified", []) + c.get("added", []) + c.get("removed", [])
+                for c in commits:
+                    commit_id = str(uuid.uuid4())
+                    commit_sha = c["id"]
+                    author_email = c["author"]["email"]
+                    message = c["message"]
+                    files = c.get("modified", []) + c.get("added", []) + c.get("removed", [])
+                    timestamp = datetime.utcnow()
+
+                    sql = """
+                        INSERT INTO github_events 
+                        (id, repo, commit_sha, author_email, message, files, timestamp, raw)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """
+                    cur.execute(sql, (
+                        commit_id,
+                        repo,
+                        commit_sha,
+                        author_email,
+                        message,
+                        json.dumps(files),
+                        timestamp,
+                        json.dumps(c)
+                    ))
+                print("Push commits inserted successfully.")
+
+            elif github_event == "pull_request":
+                pr = payload
+                event_id = str(uuid.uuid4())
+                repo = pr["repository"]["full_name"]
+                commit_sha = pr["pull_request"]["head"]["sha"]
+                author_email = pr["pull_request"]["user"]["login"]
+                message = pr["pull_request"]["title"]
+                files = []
                 timestamp = datetime.utcnow()
 
                 sql = """
@@ -86,263 +117,237 @@ def lambda_handler(event, context):
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """
                 cur.execute(sql, (
-                    commit_id,
+                    event_id,
+                    repo,
+                    commit_sha,
+                    author_email,
+                    f"PR {pr['action']}: {message}",
+                    json.dumps(files),
+                    timestamp,
+                    json.dumps(pr)
+                ))
+                print(f"Pull Request event inserted: #{pr['number']} → {pr['action']}")
+
+        # ======================================================
+        # ISSUES
+        # ======================================================
+            elif github_event == "issues":
+                issue = payload
+                event_id = str(uuid.uuid4())
+                repo = issue["repository"]["full_name"]
+                commit_sha = None
+                author_email = issue["issue"]["user"]["login"]
+                message = issue["issue"]["title"]
+                files = []
+                timestamp = datetime.utcnow()
+
+                sql = """
+                    INSERT INTO github_events 
+                    (id, repo, commit_sha, author_email, message, files, timestamp, raw)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """
+                cur.execute(sql, (
+                    event_id,
+                    repo,
+                    commit_sha,
+                    author_email,
+                    f"Issue {issue['action']}: {message}",
+                    json.dumps(files),
+                    timestamp,
+                    json.dumps(issue)
+                ))
+                print(f"Issue event inserted: #{issue['issue']['number']} → {issue['action']}")
+
+            # ======================================================
+            # ISSUE COMMENT
+            # ======================================================
+            elif github_event == "issue_comment":
+                comment = payload
+                event_id = str(uuid.uuid4())
+                repo = comment["repository"]["full_name"]
+                commit_sha = None
+                author_email = comment["comment"]["user"]["login"]
+                message = comment["comment"]["body"]
+                files = []
+                timestamp = datetime.utcnow()
+
+                sql = """
+                    INSERT INTO github_events 
+                    (id, repo, commit_sha, author_email, message, files, timestamp, raw)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """
+                cur.execute(sql, (
+                    event_id,
+                    repo,
+                    commit_sha,
+                    author_email,
+                    f"Comment {comment['action']}: {message}",
+                    json.dumps(files),
+                    timestamp,
+                    json.dumps(comment)
+                ))
+                print(f"Issue comment inserted: Issue #{comment['issue']['number']}")
+
+            # ======================================================
+            # WORKFLOW RUN
+            # ======================================================
+            elif github_event == "workflow_run":
+                run = payload["workflow_run"]
+                event_id = str(uuid.uuid4())
+                repo = payload["repository"]["full_name"]
+                commit_sha = run.get("head_sha")
+                author_email = run["head_repository"]["owner"]["login"]
+                message = f"Workflow run {run['name']} → {run['status']} / {run.get('conclusion')}"
+                files = []
+                timestamp = datetime.utcnow()
+
+                sql = """
+                    INSERT INTO github_events 
+                    (id, repo, commit_sha, author_email, message, files, timestamp, raw)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """
+                cur.execute(sql, (
+                    event_id,
                     repo,
                     commit_sha,
                     author_email,
                     message,
                     json.dumps(files),
                     timestamp,
-                    json.dumps(c)
+                    json.dumps(payload)
                 ))
-            print("Push commits inserted successfully.")
+                print(f"Workflow run event inserted: {run['name']}")
 
-        # ======================================================
-        # PULL REQUEST
-        # ======================================================
-        elif github_event == "pull_request":
-            pr = payload
-            event_id = str(uuid.uuid4())
-            repo = pr["repository"]["full_name"]
-            commit_sha = pr["pull_request"]["head"]["sha"]
-            author_email = pr["pull_request"]["user"]["login"]
-            message = pr["pull_request"]["title"]
-            files = []  # Optional: fetch changed files via API
-            timestamp = datetime.utcnow()
+            # ======================================================
+            # WORKFLOW JOB
+            # ======================================================
+            elif github_event == "workflow_job":
+                job = payload["workflow_job"]
+                event_id = str(uuid.uuid4())
+                repo = payload["repository"]["full_name"]
+                commit_sha = job.get("head_sha")
+                author_email = job["run_url"]
+                message = f"Workflow job {job['name']} → {job['status']} / {job.get('conclusion')}"
+                files = []
+                timestamp = datetime.utcnow()
 
-            sql = """
-                INSERT INTO github_events 
-                (id, repo, commit_sha, author_email, message, files, timestamp, raw)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """
-            cur.execute(sql, (
-                event_id,
-                repo,
-                commit_sha,
-                author_email,
-                f"PR {pr['action']}: {message}",
-                json.dumps(files),
-                timestamp,
-                json.dumps(pr)
-            ))
-            print(f"Pull Request event inserted: #{pr['number']} → {pr['action']}")
+                sql = """
+                    INSERT INTO github_events 
+                    (id, repo, commit_sha, author_email, message, files, timestamp, raw)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """
+                cur.execute(sql, (
+                    event_id,
+                    repo,
+                    commit_sha,
+                    author_email,
+                    message,
+                    json.dumps(files),
+                    timestamp,
+                    json.dumps(payload)
+                ))
+                print(f"Workflow job event inserted: {job['name']}")
 
-        # ======================================================
-        # ISSUES
-        # ======================================================
-        elif github_event == "issues":
-            issue = payload
-            event_id = str(uuid.uuid4())
-            repo = issue["repository"]["full_name"]
-            commit_sha = None
-            author_email = issue["issue"]["user"]["login"]
-            message = issue["issue"]["title"]
-            files = []
-            timestamp = datetime.utcnow()
+            # ======================================================
+            # RELEASE
+            # ======================================================
+            elif github_event == "release":
+                release = payload["release"]
+                event_id = str(uuid.uuid4())
+                repo = payload["repository"]["full_name"]
+                commit_sha = None
+                author_email = release["author"]["login"]
+                message = f"Release {release['tag_name']} → {payload['action']}"
+                files = []
+                timestamp = datetime.utcnow()
 
-            sql = """
-                INSERT INTO github_events 
-                (id, repo, commit_sha, author_email, message, files, timestamp, raw)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """
-            cur.execute(sql, (
-                event_id,
-                repo,
-                commit_sha,
-                author_email,
-                f"Issue {issue['action']}: {message}",
-                json.dumps(files),
-                timestamp,
-                json.dumps(issue)
-            ))
-            print(f"Issue event inserted: #{issue['issue']['number']} → {issue['action']}")
+                sql = """
+                    INSERT INTO github_events 
+                    (id, repo, commit_sha, author_email, message, files, timestamp, raw)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """
+                cur.execute(sql, (
+                    event_id,
+                    repo,
+                    commit_sha,
+                    author_email,
+                    message,
+                    json.dumps(files),
+                    timestamp,
+                    json.dumps(payload)
+                ))
+                print(f"Release event inserted: {release['tag_name']}")
 
-        # ======================================================
-        # ISSUE COMMENT
-        # ======================================================
-        elif github_event == "issue_comment":
-            comment = payload
-            event_id = str(uuid.uuid4())
-            repo = comment["repository"]["full_name"]
-            commit_sha = None
-            author_email = comment["comment"]["user"]["login"]
-            message = comment["comment"]["body"]
-            files = []
-            timestamp = datetime.utcnow()
+            # ======================================================
+            # STAR
+            # ======================================================
+            elif github_event == "star":
+                star = payload
+                event_id = str(uuid.uuid4())
+                repo = payload["repository"]["full_name"]
+                commit_sha = None
+                author_email = star["sender"]["login"]
+                message = f"Repo starred → {payload['action']}"
+                files = []
+                timestamp = datetime.utcnow()
 
-            sql = """
-                INSERT INTO github_events 
-                (id, repo, commit_sha, author_email, message, files, timestamp, raw)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """
-            cur.execute(sql, (
-                event_id,
-                repo,
-                commit_sha,
-                author_email,
-                f"Comment {comment['action']}: {message}",
-                json.dumps(files),
-                timestamp,
-                json.dumps(comment)
-            ))
-            print(f"Issue comment inserted: Issue #{comment['issue']['number']}")
+                sql = """
+                    INSERT INTO github_events 
+                    (id, repo, commit_sha, author_email, message, files, timestamp, raw)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """
+                cur.execute(sql, (
+                    event_id,
+                    repo,
+                    commit_sha,
+                    author_email,
+                    message,
+                    json.dumps(files),
+                    timestamp,
+                    json.dumps(payload)
+                ))
+                print(f"Star event inserted by {author_email}")
 
-        # ======================================================
-        # WORKFLOW RUN
-        # ======================================================
-        elif github_event == "workflow_run":
-            run = payload["workflow_run"]
-            event_id = str(uuid.uuid4())
-            repo = payload["repository"]["full_name"]
-            commit_sha = run.get("head_sha")
-            author_email = run["head_repository"]["owner"]["login"]
-            message = f"Workflow run {run['name']} → {run['status']} / {run.get('conclusion')}"
-            files = []
-            timestamp = datetime.utcnow()
+            # ======================================================
+            # FORK
+            # ======================================================
+            elif github_event == "fork":
+                fork = payload
+                event_id = str(uuid.uuid4())
+                repo = payload["repository"]["full_name"]
+                commit_sha = None
+                author_email = fork["forkee"]["owner"]["login"]
+                message = f"Repo forked → {payload['action']}"
+                files = []
+                timestamp = datetime.utcnow()
 
-            sql = """
-                INSERT INTO github_events 
-                (id, repo, commit_sha, author_email, message, files, timestamp, raw)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """
-            cur.execute(sql, (
-                event_id,
-                repo,
-                commit_sha,
-                author_email,
-                message,
-                json.dumps(files),
-                timestamp,
-                json.dumps(payload)
-            ))
-            print(f"Workflow run event inserted: {run['name']}")
+                sql = """
+                    INSERT INTO github_events 
+                    (id, repo, commit_sha, author_email, message, files, timestamp, raw)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """
+                cur.execute(sql, (
+                    event_id,
+                    repo,
+                    commit_sha,
+                    author_email,
+                    message,
+                    json.dumps(files),
+                    timestamp,
+                    json.dumps(payload)
+                ))
+                print(f"Fork event inserted by {author_email}")
 
-        # ======================================================
-        # WORKFLOW JOB
-        # ======================================================
-        elif github_event == "workflow_job":
-            job = payload["workflow_job"]
-            event_id = str(uuid.uuid4())
-            repo = payload["repository"]["full_name"]
-            commit_sha = job.get("head_sha")
-            author_email = job["run_url"]
-            message = f"Workflow job {job['name']} → {job['status']} / {job.get('conclusion')}"
-            files = []
-            timestamp = datetime.utcnow()
+            else:
+                print("Unhandled GitHub event:", github_event)
 
-            sql = """
-                INSERT INTO github_events 
-                (id, repo, commit_sha, author_email, message, files, timestamp, raw)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """
-            cur.execute(sql, (
-                event_id,
-                repo,
-                commit_sha,
-                author_email,
-                message,
-                json.dumps(files),
-                timestamp,
-                json.dumps(payload)
-            ))
-            print(f"Workflow job event inserted: {job['name']}")
+        except Exception as event_error:
+                print(f"Error processing {github_event} event:", str(event_error))
 
-        # ======================================================
-        # RELEASE
-        # ======================================================
-        elif github_event == "release":
-            release = payload["release"]
-            event_id = str(uuid.uuid4())
-            repo = payload["repository"]["full_name"]
-            commit_sha = None
-            author_email = release["author"]["login"]
-            message = f"Release {release['tag_name']} → {payload['action']}"
-            files = []
-            timestamp = datetime.utcnow()
-
-            sql = """
-                INSERT INTO github_events 
-                (id, repo, commit_sha, author_email, message, files, timestamp, raw)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """
-            cur.execute(sql, (
-                event_id,
-                repo,
-                commit_sha,
-                author_email,
-                message,
-                json.dumps(files),
-                timestamp,
-                json.dumps(payload)
-            ))
-            print(f"Release event inserted: {release['tag_name']}")
-
-        # ======================================================
-        # STAR
-        # ======================================================
-        elif github_event == "star":
-            star = payload
-            event_id = str(uuid.uuid4())
-            repo = payload["repository"]["full_name"]
-            commit_sha = None
-            author_email = star["sender"]["login"]
-            message = f"Repo starred → {payload['action']}"
-            files = []
-            timestamp = datetime.utcnow()
-
-            sql = """
-                INSERT INTO github_events 
-                (id, repo, commit_sha, author_email, message, files, timestamp, raw)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """
-            cur.execute(sql, (
-                event_id,
-                repo,
-                commit_sha,
-                author_email,
-                message,
-                json.dumps(files),
-                timestamp,
-                json.dumps(payload)
-            ))
-            print(f"Star event inserted by {author_email}")
-
-        # ======================================================
-        # FORK
-        # ======================================================
-        elif github_event == "fork":
-            fork = payload
-            event_id = str(uuid.uuid4())
-            repo = payload["repository"]["full_name"]
-            commit_sha = None
-            author_email = fork["forkee"]["owner"]["login"]
-            message = f"Repo forked → {payload['action']}"
-            files = []
-            timestamp = datetime.utcnow()
-
-            sql = """
-                INSERT INTO github_events 
-                (id, repo, commit_sha, author_email, message, files, timestamp, raw)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """
-            cur.execute(sql, (
-                event_id,
-                repo,
-                commit_sha,
-                author_email,
-                message,
-                json.dumps(files),
-                timestamp,
-                json.dumps(payload)
-            ))
-            print(f"Fork event inserted by {author_email}")
-
-        else:
-            print("Unhandled GitHub event:", github_event)
-
-        conn.commit()
-        cur.close()
-        conn.close()
+        finally:
+            conn.commit()
+            cur.close()
+            conn.close()
 
     except Exception as e:
         print("Error handling event:", str(e))
