@@ -73,7 +73,7 @@ def lambda_handler(event, context):
     payload = json.loads(body)
 
     # ======================================================
-    # 🔥 HANDLE PUSH EVENT. 
+    # 🔥 HANDLE PUSH EVENT.
     # ======================================================
     if github_event == "push":
         repo = payload["repository"]["full_name"]
