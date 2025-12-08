@@ -183,9 +183,84 @@ def lambda_handler(event, context):
             elif github_event == "issues":
                 issue = payload["issue"]
                 github_id = issue["id"]
-                author_email = issue["user"]["login"]
-                message = f"Issue {payload['action']}: {issue['title']}"
-                upsert_record(github_id, author_email, message)
+                issue_number = issue["number"]
+                title = issue["title"]
+                body_text = issue.get("body", "")
+                action = payload["action"]
+                state = issue["state"]
+                author_login = issue["user"]["login"]
+                timestamp = datetime.utcnow()
+                event_uuid = str(uuid.uuid4())
+
+                sql = """
+                    INSERT INTO issues
+                    (id, github_id, repo, issue_number, title, body, action, state, author_login, timestamp, raw)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (github_id, repo)
+                    DO UPDATE SET
+                        issue_number = EXCLUDED.issue_number,
+                        title = EXCLUDED.title,
+                        body = EXCLUDED.body,
+                        action = EXCLUDED.action,
+                        state = EXCLUDED.state,
+                        author_login = EXCLUDED.author_login,
+                        timestamp = EXCLUDED.timestamp,
+                        raw = EXCLUDED.raw
+                """
+                cur.execute(sql, (
+                    event_uuid,
+                    github_id,
+                    repo,
+                    issue_number,
+                    title,
+                    body_text,
+                    action,
+                    state,
+                    author_login,
+                    timestamp,
+                    json.dumps(issue)
+                ))
+
+                print("Issue upserted successfully.")
+
+
+            elif github_event == "issue_comment":
+                comment = payload["comment"]
+                github_id = comment["id"]
+                issue_number = payload["issue"]["number"]
+                comment_body = comment.get("body", "")
+                action = payload["action"]
+                author_login = comment["user"]["login"]
+                timestamp = datetime.utcnow()
+                event_uuid = str(uuid.uuid4())
+
+                sql = """
+                    INSERT INTO issue_comments
+                    (id, github_id, repo, issue_number, comment_body, action, author_login, timestamp, raw)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (github_id, repo)
+                    DO UPDATE SET
+                        issue_number = EXCLUDED.issue_number,
+                        comment_body = EXCLUDED.comment_body,
+                        action = EXCLUDED.action,
+                        author_login = EXCLUDED.author_login,
+                        timestamp = EXCLUDED.timestamp,
+                        raw = EXCLUDED.raw
+                """
+                cur.execute(sql, (
+                    event_uuid,
+                    github_id,
+                    repo,
+                    issue_number,
+                    comment_body,
+                    action,
+                    author_login,
+                    timestamp,
+                    json.dumps(comment)
+                ))
+
+                print("Issue comment upserted successfully.")
+
 
             elif github_event == "issue_comment":
                 comment = payload["comment"]

@@ -2,6 +2,7 @@ import json
 import os
 import psycopg2
 from datetime import datetime
+import uuid
 
 # ==========================================================
 # PostgreSQL Connection
@@ -58,11 +59,18 @@ def lambda_handler(event, context):
 
         # ---- ISSUE LINKS ---- #
         elif webhook_event in ["issue_link_created", "issue_link_deleted"]:
-            handle_issue_links(webhook_event, body)
+            author_login = body.get("user", {}).get("displayName")
+            handle_issue_links(webhook_event, body, author_login=author_login)
+
 
         # ---- SUBTASKS ---- #
         elif webhook_event in ["subtask_created", "subtask_updated", "subtask_deleted"]:
-            handle_subtask_events(webhook_event, issue)
+            board_id = body.get("issue", {}).get("originBoardId")  # optional
+            issue_data = body.get("issue")
+            author_login = body.get("user", {}).get("displayName")
+            handle_subtask_events(webhook_event, issue_data, board_id=board_id, author_login=author_login)
+
+
 
         # ---- WORKLOG ---- #
         elif webhook_event in ["worklog_created", "worklog_updated", "worklog_deleted"]:
@@ -195,65 +203,245 @@ def handle_issue_deleted(issue):
 # ==========================================================
 # SPRINT HANDLER
 # ==========================================================
-def handle_sprint_events(event, sprint):
-    print(f"Sprint event: {event}", json.dumps(sprint))
-    # TODO: Insert/update sprint info into separate sprint table
+def handle_sprint_events(event_type, sprint, repo_or_board_id=None, author_login=None):
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        event_uuid = str(uuid.uuid4())
+        timestamp = datetime.utcnow()
+
+        sql = """
+            INSERT INTO jira_sprints
+            (id, sprint_id, repo_or_board_id, name, state, start_date, end_date, goal, event_type, author_login, timestamp, raw)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (sprint_id, event_type)
+            DO UPDATE SET
+                name = EXCLUDED.name,
+                state = EXCLUDED.state,
+                start_date = EXCLUDED.start_date,
+                end_date = EXCLUDED.end_date,
+                goal = EXCLUDED.goal,
+                author_login = EXCLUDED.author_login,
+                timestamp = EXCLUDED.timestamp,
+                raw = EXCLUDED.raw
+        """
+
+        cur.execute(sql, (
+            event_uuid,
+            sprint["id"],
+            repo_or_board_id,
+            sprint.get("name"),
+            sprint.get("state"),
+            sprint.get("startDate"),
+            sprint.get("endDate"),
+            sprint.get("goal"),
+            event_type,
+            author_login,
+            timestamp,
+            json.dumps(sprint)
+        ))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+        print(f"Sprint event '{event_type}' recorded successfully.")
+
+    except Exception as e:
+        print(f"Error recording sprint event '{event_type}':", str(e))
 
 
 # ==========================================================
 # COMMENT HANDLER
 # ==========================================================
-def handle_comment_events(event, issue, comment):
-    print(f"Comment event: {event}", json.dumps(comment))
+def handle_comment_events(event_type, issue, comment, board_id=None, author_login=None):
     try:
         conn = get_connection()
         cur = conn.cursor()
+        event_uuid = str(uuid.uuid4())
+        timestamp = datetime.utcnow()
+
         sql = """
-            INSERT INTO jira_comments (
-                id, issue_key, author_user_id, body, updated_at, raw
-            ) VALUES (%s, %s, %s, %s, %s, %s)
-            ON CONFLICT (id) DO UPDATE
-            SET body = EXCLUDED.body,
-                updated_at = EXCLUDED.updated_at,
+            INSERT INTO jira_issue_comments
+            (id, comment_id, issue_id, board_id, comment_body, event_type, author_login, timestamp, raw)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (comment_id, event_type)
+            DO UPDATE SET
+                comment_body = EXCLUDED.comment_body,
+                author_login = EXCLUDED.author_login,
+                timestamp = EXCLUDED.timestamp,
                 raw = EXCLUDED.raw
         """
+
         cur.execute(sql, (
-            comment.get("id"),
-            issue.get("key"),
-            comment.get("author", {}).get("id"),
+            event_uuid,
+            comment["id"],
+            issue["id"],
+            board_id,
             comment.get("body"),
-            datetime.utcnow(),
+            event_type,
+            author_login,
+            timestamp,
             json.dumps(comment)
         ))
+
         conn.commit()
         cur.close()
         conn.close()
+        print(f"Comment event '{event_type}' recorded successfully.")
+
     except Exception as e:
-        print("Error in handle_comment_events:", str(e))
+        print(f"Error recording comment event '{event_type}':", str(e))
 
 
 # ==========================================================
 # VOTING / WATCH HANDLER
 # ==========================================================
-def handle_vote_watch_events(event, issue):
-    print(f"Vote/Watch event: {event}", json.dumps(issue))
-    # TODO: Update votes/watchers table
+def handle_vote_watch_events(event_type, issue, board_id=None, author_login=None):
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        event_uuid = str(uuid.uuid4())
+        timestamp = datetime.utcnow()
+
+        total_votes = issue.get("votes", {}).get("votes", 0)
+        total_watchers = issue.get("watches", {}).get("watchCount", 0)
+
+        sql = """
+            INSERT INTO jira_issue_votes_watches
+            (id, issue_id, board_id, event_type, total_votes, total_watchers, author_login, timestamp, raw)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (issue_id, event_type)
+            DO UPDATE SET
+                total_votes = EXCLUDED.total_votes,
+                total_watchers = EXCLUDED.total_watchers,
+                author_login = EXCLUDED.author_login,
+                timestamp = EXCLUDED.timestamp,
+                raw = EXCLUDED.raw
+        """
+
+        cur.execute(sql, (
+            event_uuid,
+            issue["id"],
+            board_id,
+            event_type,
+            total_votes,
+            total_watchers,
+            author_login,
+            timestamp,
+            json.dumps(issue)
+        ))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+        print(f"Vote/Watch event '{event_type}' recorded successfully.")
+
+    except Exception as e:
+        print(f"Error recording Vote/Watch event '{event_type}':", str(e))
+
 
 
 # ==========================================================
 # ISSUE LINKS HANDLER
 # ==========================================================
-def handle_issue_links(event, body):
-    print(f"Issue link event: {event}", json.dumps(body))
-    # TODO: Insert/update issue_links table
+def handle_issue_links(event_type, payload, author_login=None):
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        event_uuid = str(uuid.uuid4())
+        timestamp = datetime.utcnow()
+
+        link = payload["issueLink"]
+        source_issue_id = link["source"]["id"]
+        target_issue_id = link["destination"]["id"]
+        link_type = link["type"]["name"]
+        link_id = link["id"]
+
+        sql = """
+            INSERT INTO jira_issue_links
+            (id, link_id, source_issue_id, target_issue_id, link_type, event_type, author_login, timestamp, raw)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (link_id, event_type)
+            DO UPDATE SET
+                source_issue_id = EXCLUDED.source_issue_id,
+                target_issue_id = EXCLUDED.target_issue_id,
+                link_type = EXCLUDED.link_type,
+                author_login = EXCLUDED.author_login,
+                timestamp = EXCLUDED.timestamp,
+                raw = EXCLUDED.raw
+        """
+
+        cur.execute(sql, (
+            event_uuid,
+            link_id,
+            source_issue_id,
+            target_issue_id,
+            link_type,
+            event_type,
+            author_login,
+            timestamp,
+            json.dumps(link)
+        ))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+        print(f"Issue link event '{event_type}' recorded successfully.")
+
+    except Exception as e:
+        print(f"Error recording issue link event '{event_type}':", str(e))
+
 
 
 # ==========================================================
 # SUBTASK HANDLER
 # ==========================================================
-def handle_subtask_events(event, issue):
-    print(f"Subtask event: {event}", json.dumps(issue))
-    # TODO: Insert/update subtasks table
+def handle_subtask_events(event_type, issue, board_id=None, author_login=None):
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        event_uuid = str(uuid.uuid4())
+        timestamp = datetime.utcnow()
+
+        subtask_id = issue["id"]
+        parent_issue_id = issue.get("parent", {}).get("id")
+        summary = issue.get("fields", {}).get("summary")
+        status = issue.get("fields", {}).get("status", {}).get("name")
+
+        sql = """
+            INSERT INTO jira_subtasks
+            (id, subtask_id, parent_issue_id, board_id, summary, status, event_type, author_login, timestamp, raw)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (subtask_id, event_type)
+            DO UPDATE SET
+                summary = EXCLUDED.summary,
+                status = EXCLUDED.status,
+                author_login = EXCLUDED.author_login,
+                timestamp = EXCLUDED.timestamp,
+                raw = EXCLUDED.raw
+        """
+
+        cur.execute(sql, (
+            event_uuid,
+            subtask_id,
+            parent_issue_id,
+            board_id,
+            summary,
+            status,
+            event_type,
+            author_login,
+            timestamp,
+            json.dumps(issue)
+        ))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+        print(f"Subtask event '{event_type}' recorded successfully.")
+
+    except Exception as e:
+        print(f"Error recording subtask event '{event_type}':", str(e))
+
 
 
 # ==========================================================
