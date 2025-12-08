@@ -1,0 +1,9 @@
+psycopg2-binary
+requests
+boto3 
+pymysql
+awslambdaric
+twilio
+pusher
+
+

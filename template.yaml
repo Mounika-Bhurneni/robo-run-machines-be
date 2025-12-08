@@ -327,6 +327,33 @@ Resources:
           SERVICENOW_WEBHOOK_SECRET: !Ref ParamServiceNowWebhookSecret
 
 
+  ChatAppFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-chat-app"
+      CodeUri: chat_app/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 512
+      Layers: [!Ref MyLibLayer]
+      Events:
+        ChatAppWebSocket:
+          Type: Api
+          Properties:
+            Path: /chat
+            Method: post
+            RestApiId: !Ref WebSocketApi
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+          CHAT_APP_SECRET: !Ref ParamChatAppSecret
+
+
+
 Outputs:
   HttpApiUrl:
     Description: "Base URL for the HTTP API"
