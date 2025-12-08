@@ -133,11 +133,52 @@ def lambda_handler(event, context):
                 print("Push commits upserted successfully.")
 
             elif github_event == "pull_request":
-                pr = payload
-                github_id = pr["pull_request"]["id"]
-                author_email = pr["pull_request"]["user"]["login"]
-                message = f"PR {pr['action']}: {pr['pull_request']['title']}"
-                upsert_record(github_id, author_email, message, commit_sha=pr["pull_request"]["head"]["sha"])
+                pr = payload["pull_request"]
+                github_id = pr["id"]
+                pr_number = pr["number"]
+                author_login = pr["user"]["login"]
+                title = pr["title"]
+                action = payload["action"]
+                state = pr["state"]
+                head_sha = pr["head"]["sha"]
+                merged = pr.get("merged", False)
+                timestamp = datetime.utcnow()
+
+                event_uuid = str(uuid.uuid4())
+                sql = """
+                    INSERT INTO pull_requests
+                    (id, github_id, repo, pr_number, title, action, state, author_login, head_sha, merged, timestamp, raw)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (github_id, repo)
+                    DO UPDATE SET
+                        pr_number = EXCLUDED.pr_number,
+                        title = EXCLUDED.title,
+                        action = EXCLUDED.action,
+                        state = EXCLUDED.state,
+                        author_login = EXCLUDED.author_login,
+                        head_sha = EXCLUDED.head_sha,
+                        merged = EXCLUDED.merged,
+                        timestamp = EXCLUDED.timestamp,
+                        raw = EXCLUDED.raw
+                """
+                cur.execute(sql, (
+                    event_uuid,
+                    github_id,
+                    repo,
+                    pr_number,
+                    title,
+                    action,
+                    state,
+                    author_login,
+                    head_sha,
+                    merged,
+                    timestamp,
+                    json.dumps(pr)
+                ))
+
+                print("Pull request upserted successfully.")
+
+
 
             elif github_event == "issues":
                 issue = payload["issue"]
