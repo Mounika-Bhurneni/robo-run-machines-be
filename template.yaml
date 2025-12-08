@@ -338,12 +338,12 @@ Resources:
       MemorySize: 512
       Layers: [!Ref MyLibLayer]
       Events:
-        ChatAppWebSocket:
-          Type: Api
+        ChatAppWebSocketPost:
+          Type: HttpApi
           Properties:
             Path: /chat
             Method: post
-            RestApiId: !Ref WebSocketApi
+            ApiId: !Ref HttpApi
       Environment:
         Variables:
           DB_HOST: !Ref ParamDBHost
