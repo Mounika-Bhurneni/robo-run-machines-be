@@ -350,7 +350,6 @@ Resources:
           DB_USER: !Ref ParamDBUser
           DB_PASSWORD: !Ref ParamDBPassword
           DB_NAME: !Ref ParamDBName
-          CHAT_APP_SECRET: !Ref ParamChatAppSecret
 
 
 
