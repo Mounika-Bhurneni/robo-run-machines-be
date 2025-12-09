@@ -515,6 +515,32 @@ Resources:
           DB_PASSWORD: !Ref ParamDBPassword
           DB_NAME: !Ref ParamDBName
 
+  GenerateReportFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-generate-report"
+      CodeUri: generate_report/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 512
+      Layers: [!Ref MyLibLayer]
+      Events:
+        GenerateReportGet:
+          Type: HttpApi
+          Properties:
+            Path: reports/generate
+            Method: get
+            ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: CognitoJwt
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+
 
 Outputs:
   HttpApiUrl:
