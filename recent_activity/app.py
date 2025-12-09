@@ -1,7 +1,28 @@
 import os
 import json
 import psycopg2
-from datetime import datetime, date
+import psycopg2.extras
+from datetime import datetime
+import pytz  # make sure this is installed
+
+from datetime import timezone
+
+def make_aware(dt):
+    """Convert naive datetime to UTC-aware."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+# ==========================
+# Helper to parse query params
+# ==========================
+def parse_date(date_str):
+    """Convert date string to UTC timezone-aware datetime."""
+    dt = datetime.fromisoformat(date_str)
+    return dt.astimezone(pytz.UTC)
 
 
 # ==========================================================
@@ -54,10 +75,18 @@ def error(status, message):
 def fetch_jira_issues(cursor, from_date, to_date):
     cursor.execute(
         """
-        SELECT id, issue_id, title, status, assignee, created_at AS timestamp, raw
+        SELECT 
+            id,
+            issue_key AS issue_id,
+            assignee_name AS assignee,
+            reporter_name AS reporter,
+            status,
+            priority,
+            updated_at AS timestamp,
+            raw
         FROM jira_issues
-        WHERE created_at BETWEEN %s AND %s
-        ORDER BY created_at DESC;
+        WHERE updated_at BETWEEN %s AND %s
+        ORDER BY updated_at DESC;
         """,
         (from_date, to_date),
     )
@@ -218,9 +247,11 @@ def lambda_handler(event, context):
 
     try:
         query = event.get("queryStringParameters") or {}
+        from_date_str = query.get("from_date")
+        to_date_str = query.get("to_date")
 
-        from_date = query.get("from_date")
-        to_date = query.get("to_date")
+        from_date = parse_date(from_date_str)
+        to_date = parse_date(to_date_str)
 
         if not from_date or not to_date:
             return error(400, "from_date and to_date are required")
@@ -237,7 +268,7 @@ def lambda_handler(event, context):
         all_events += fetch_pull_requests(cursor, from_date, to_date)
         all_events += fetch_github_issues(cursor, from_date, to_date)
         all_events += fetch_issue_comments(cursor, from_date, to_date)
-        all_events += fetch_activity_logs(cursor, from_date, to_date)
+        # all_events += fetch_activity_logs(cursor, from_date, to_date)
 
         # Sort all events DESC by timestamp
         all_events = sorted(all_events, key=lambda x: x.get("timestamp"), reverse=True)
