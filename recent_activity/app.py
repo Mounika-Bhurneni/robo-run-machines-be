@@ -5,7 +5,14 @@ import psycopg2.extras
 from datetime import datetime
 import pytz  # make sure this is installed
 
-from datetime import timezone
+from datetime import datetime, date, timezone
+
+class DateTimeEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+        return super().default(obj)
+
 
 def make_aware(dt):
     """Convert naive datetime to UTC-aware."""
@@ -58,7 +65,7 @@ class DateTimeEncoder(json.JSONEncoder):
 def success(message, data):
     return {
         "statusCode": 200,
-        "body": json.dumps({"status": 200, "message": message, "data": data}, cls=DateTimeEncoder),
+        "body": json.dumps({"status": 200, "message": message, "data": data}, cls=DateTimeEncoder,indent=2),
     }
 
 
@@ -91,7 +98,7 @@ def fetch_jira_issues(cursor, from_date, to_date):
         (from_date, to_date),
     )
     return [
-        {**dict(r), "source": "jira_issue"}
+        {**dict(r), "source": "jira_issue", "timestamp": make_aware(r["timestamp"])}
         for r in cursor.fetchall()
     ]
 
@@ -111,7 +118,7 @@ def fetch_jira_subtasks(cursor, from_date, to_date):
         (from_date, to_date),
     )
     return [
-        {**dict(r), "source": "jira_subtask"}
+        {**dict(r), "source": "jira_subtask", "timestamp": make_aware(r["timestamp"])}
         for r in cursor.fetchall()
     ]
 
@@ -131,7 +138,7 @@ def fetch_jira_sprints(cursor, from_date, to_date):
         (from_date, to_date),
     )
     return [
-        {**dict(r), "source": "jira_sprint"}
+        {**dict(r), "source": "jira_sprint", "timestamp": make_aware(r["timestamp"])}
         for r in cursor.fetchall()
     ]
 
@@ -151,7 +158,7 @@ def fetch_github_events(cursor, from_date, to_date):
         (from_date, to_date),
     )
     return [
-        {**dict(r), "source": "github_event"}
+        {**dict(r), "source": "github_event", "timestamp": make_aware(r["timestamp"])}
         for r in cursor.fetchall()
     ]
 
@@ -172,7 +179,8 @@ def fetch_pull_requests(cursor, from_date, to_date):
         (from_date, to_date),
     )
     return [
-        {**dict(r), "source": "pull_request"}
+        
+        {**dict(r), "source": "pull_request", "timestamp": make_aware(r["timestamp"])}
         for r in cursor.fetchall()
     ]
 
@@ -193,7 +201,7 @@ def fetch_github_issues(cursor, from_date, to_date):
         (from_date, to_date),
     )
     return [
-        {**dict(r), "source": "github_issue"}
+        {**dict(r), "source": "github_issue", "timestamp": make_aware(r["timestamp"])}
         for r in cursor.fetchall()
     ]
 
@@ -214,7 +222,8 @@ def fetch_issue_comments(cursor, from_date, to_date):
         (from_date, to_date),
     )
     return [
-        {**dict(r), "source": "issue_comment"}
+        
+        {**dict(r), "source": "issue_comment", "timestamp": make_aware(r["timestamp"])}
         for r in cursor.fetchall()
     ]
 
@@ -234,7 +243,7 @@ def fetch_activity_logs(cursor, from_date, to_date):
         (from_date, to_date),
     )
     return [
-        {**dict(r), "source": "activity_log"}
+        {**dict(r), "source": "activity_log", "timestamp": make_aware(r["timestamp"])}
         for r in cursor.fetchall()
     ]
 

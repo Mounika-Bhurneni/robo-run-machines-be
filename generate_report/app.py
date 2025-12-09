@@ -1,7 +1,8 @@
 import os
 import json
 import psycopg2
-from datetime import datetime, date
+from datetime import datetime, date, timezone
+import pytz  # pip install pytz
 
 ALLOWED_ROLES = ["DEV", "QA", "MANAGER", "DEV_MANAGER"]
 
@@ -48,6 +49,28 @@ def error(status, message):
 
 
 # ==========================================================
+# Helper to parse query param dates
+# ==========================================================
+def parse_date(date_str):
+    """Parse ISO date string to UTC-aware datetime"""
+    dt = datetime.fromisoformat(date_str)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(pytz.UTC)
+
+
+# ==========================================================
+# Helper to make DB timestamps UTC-aware
+# ==========================================================
+def make_aware(dt):
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(pytz.UTC)
+
+
+# ==========================================================
 # Fetch Jira Issues
 # ==========================================================
 def fetch_jira_issues(cursor, team, from_date, to_date):
@@ -84,7 +107,7 @@ def fetch_github_prs(cursor, team, from_date, to_date):
 
 
 # ==========================================================
-# Fetch Sprint Progress from jira_sprints
+# Fetch Sprint Progress
 # ==========================================================
 def fetch_sprint_progress(cursor, team, from_date, to_date):
     cursor.execute(
@@ -103,7 +126,7 @@ def fetch_sprint_progress(cursor, team, from_date, to_date):
 
 
 # ==========================================================
-# Fetch Jira Subtasks from jira_subtasks
+# Fetch Jira Subtasks
 # ==========================================================
 def fetch_jira_subtasks(cursor, team, from_date, to_date):
     cursor.execute(
@@ -149,45 +172,34 @@ def lambda_handler(event, context):
         query = event.get("queryStringParameters") or {}
 
         team = query.get("team")
-        from_date = query.get("from_date")
-        to_date = query.get("to_date")
+        from_date_str = query.get("from_date")
+        to_date_str = query.get("to_date")
         report_type = query.get("type", "full")  # jira|github|sprints|subtasks|logs|full
 
-        if not team or not from_date or not to_date:
+        if not team or not from_date_str or not to_date_str:
             return error(400, "team, from_date, to_date are required")
+
+        # Parse query params as UTC-aware datetimes
+        from_date = parse_date(from_date_str)
+        to_date = parse_date(to_date_str)
 
         conn = get_connection()
         cursor = conn.cursor()
 
         response_data = {}
 
-        # -----------------------------
-        # JIRA Issues
-        # -----------------------------
         if report_type in ["jira", "full"]:
             response_data["jira_issues"] = fetch_jira_issues(cursor, team, from_date, to_date)
 
-        # -----------------------------
-        # GitHub PRs + merges
-        # -----------------------------
         if report_type in ["github", "full"]:
             response_data["github_pull_requests"] = fetch_github_prs(cursor, team, from_date, to_date)
 
-        # -----------------------------
-        # Sprint Progress
-        # -----------------------------
         if report_type in ["sprints", "full"]:
             response_data["jira_sprint_progress"] = fetch_sprint_progress(cursor, team, from_date, to_date)
 
-        # -----------------------------
-        # Jira Subtasks
-        # -----------------------------
         if report_type in ["subtasks", "full"]:
             response_data["jira_subtasks"] = fetch_jira_subtasks(cursor, team, from_date, to_date)
 
-        # -----------------------------
-        # Activity Logs
-        # -----------------------------
         if report_type in ["logs", "full"]:
             response_data["activity_logs"] = fetch_activity_logs(cursor, team, from_date, to_date)
 
