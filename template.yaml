@@ -353,6 +353,31 @@ Resources:
 
 
 
+  RecentGitActivityFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-recent-git-activity"
+      CodeUri: recent_git_activity/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 512
+      Layers: [!Ref MyLibLayer]
+      Events:
+        RecentGitActivityGet:
+          Type: HttpApi
+          Properties:
+            Path: /git/recent
+            Method: get
+            ApiId: !Ref HttpApi
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+
+
 Outputs:
   HttpApiUrl:
     Description: "Base URL for the HTTP API"
