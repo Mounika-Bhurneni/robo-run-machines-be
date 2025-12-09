@@ -370,6 +370,8 @@ Resources:
             Path: /git/recent
             Method: get
             ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: CognitoJwt            
       Environment:
         Variables:
           DB_HOST: !Ref ParamDBHost
@@ -395,6 +397,8 @@ Resources:
             Path: /jira/tasks/today
             Method: get
             ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: CognitoJwt
       Environment:
         Variables:
           DB_HOST: !Ref ParamDBHost
@@ -421,6 +425,8 @@ Resources:
             Path: /jira/sprint/progress
             Method: get
             ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: CognitoJwt
       Environment:
         Variables:
           DB_HOST: !Ref ParamDBHost
