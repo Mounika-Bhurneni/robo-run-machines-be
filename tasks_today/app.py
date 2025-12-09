@@ -5,7 +5,6 @@ from datetime import datetime, date
 
 ALLOWED_ROLES = ["DEV", "QA", "MANAGER", "DEV_MANAGER"]
 
-
 # ==========================================================
 # PostgreSQL Connection
 # ==========================================================
@@ -21,7 +20,6 @@ def get_connection():
     except Exception as e:
         print("DB Connection Error:", str(e))
         raise
-
 
 # ==========================================================
 # Lambda Handler
@@ -47,9 +45,23 @@ def lambda_handler(event, context):
         cur = conn.cursor()
 
         # ==========================================================
-        # Fetch Jira Issues assigned to user (Today)
+        # Determine filter: all tasks vs user tasks
         # ==========================================================
-        cur.execute("""
+        if user_role == "DEV_MANAGER":
+            # Fetch all tasks updated today
+            issue_filter = ""
+            subtask_filter = ""
+            params = ()
+        else:
+            # Fetch only tasks assigned to current user
+            issue_filter = "WHERE (assignee_user_id = %s OR assignee_name = %s) AND DATE(updated_at) = CURRENT_DATE"
+            subtask_filter = "WHERE author_login = %s AND DATE(timestamp) = CURRENT_DATE"
+            params = (user_email, user_email)
+
+        # ==========================================================
+        # Fetch Jira Issues
+        # ==========================================================
+        issue_query = f"""
             SELECT 
                 id,
                 issue_key,
@@ -61,17 +73,16 @@ def lambda_handler(event, context):
                 updated_at,
                 raw
             FROM jira_issues
-            WHERE (assignee_user_id = %s OR assignee_name = %s)
-              AND DATE(updated_at) = CURRENT_DATE
+            {issue_filter}
             ORDER BY updated_at DESC
-        """, (user_email, user_email))
-
+        """
+        cur.execute(issue_query, params)
         issues_today = cur.fetchall()
 
         # ==========================================================
-        # Fetch Jira Subtasks assigned today
+        # Fetch Jira Subtasks
         # ==========================================================
-        cur.execute("""
+        subtask_query = f"""
             SELECT 
                 id,
                 subtask_id,
@@ -84,11 +95,10 @@ def lambda_handler(event, context):
                 timestamp,
                 raw
             FROM jira_subtasks
-            WHERE author_login = %s
-              AND DATE(timestamp) = CURRENT_DATE
+            {subtask_filter}
             ORDER BY timestamp DESC
-        """, (user_email,))
-
+        """
+        cur.execute(subtask_query, params if user_role != "DEV_MANAGER" else ())
         subtasks_today = cur.fetchall()
 
         cur.close()
@@ -101,7 +111,7 @@ def lambda_handler(event, context):
                 "user": user_email,
                 "issues_today": issues_today,
                 "subtasks_today": subtasks_today
-            }, default=str)
+            }, default=str,indent=2)
         }
 
     except Exception as e:

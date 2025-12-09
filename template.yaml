@@ -435,6 +435,87 @@ Resources:
           DB_NAME: !Ref ParamDBName
 
 
+  TeamInsightsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-team-insights"
+      CodeUri: team_insights/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 512
+      Layers: [!Ref MyLibLayer]
+      Events:
+        TeamInsightsGet:
+          Type: HttpApi
+          Properties:
+            Path: /jira/team/insights
+            Method: get
+            ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: CognitoJwt
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+
+
+  RecentActivityFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-recent-activity"
+      CodeUri: recent_activity/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 512
+      Layers: [!Ref MyLibLayer]
+      Events:
+        RecentActivityGet:
+          Type: HttpApi
+          Properties:
+            Path: /activity/recent
+            Method: get
+            ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: CognitoJwt
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+
+
+  WeeklyAnalyticsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-weekly-analytics"
+      CodeUri: weekly_analytics/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 512
+      Layers: [!Ref MyLibLayer]
+      Events:
+        WeeklyAnalyticsGet:
+          Type: HttpApi
+          Properties:
+            Path: /analytics/weekly
+            Method: get
+            ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: CognitoJwt
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+
+
 Outputs:
   HttpApiUrl:
     Description: "Base URL for the HTTP API"
