@@ -6,9 +6,6 @@ from datetime import datetime, date
 ALLOWED_ROLES = ["DEV", "QA", "MANAGER", "DEV_MANAGER"]
 
 
-# ==========================================================
-# PostgreSQL Connection
-# ==========================================================
 def get_connection():
     return psycopg2.connect(
         host=os.environ["DB_HOST"],
@@ -19,21 +16,17 @@ def get_connection():
     )
 
 
-# ==========================================================
-# Lambda Handler
-# ==========================================================
 def lambda_handler(event, context):
     try:
         # Extract JWT claims
         claims = event.get("requestContext", {}).get("authorizer", {}).get("jwt", {}).get("claims", {})
         user_email = claims.get("email")
-        user_role = claims.get("custom:role")  # Cognito custom role
+        user_role = claims.get("custom:role")
         sub = claims.get("sub")
 
         print("User Email:", user_email)
         print("User Role:", user_role)
         print("sub:", sub)
-
 
         # Role check
         if not user_role or user_role not in ALLOWED_ROLES:
@@ -42,22 +35,14 @@ def lambda_handler(event, context):
                 "body": json.dumps({"error": "Access denied. Insufficient permissions."})
             }
 
-        # Get sprint_id from query params
-        sprint_id = event.get("queryStringParameters", {}).get("sprint_id")
-        if not sprint_id:
-            return {
-                "statusCode": 400,
-                "body": json.dumps({"error": "Missing sprint_id"})
-            }
-
         conn = get_connection()
         cur = conn.cursor()
 
         # ==========================================================
-        # Fetch Sprint Info
+        # Fetch ALL Sprints (Latest Record Per Sprint)
         # ==========================================================
         cur.execute("""
-            SELECT
+            SELECT DISTINCT ON (sprint_id)
                 sprint_id,
                 repo_or_board_id,
                 name,
@@ -69,68 +54,63 @@ def lambda_handler(event, context):
                 author_login,
                 timestamp
             FROM jira_sprints
-            WHERE sprint_id = %s
-            ORDER BY timestamp DESC
-            LIMIT 1
-        """, (sprint_id,))
+            ORDER BY sprint_id, timestamp DESC
+        """)
 
-        sprint = cur.fetchone()
+        sprints = cur.fetchall()
         cur.close()
         conn.close()
 
-        if not sprint:
+        if not sprints:
             return {
                 "statusCode": 404,
-                "body": json.dumps({"error": "Sprint not found"})
+                "body": json.dumps({"error": "No sprints found"})
             }
 
-        (
-            sprint_id,
-            board_id,
-            name,
-            state,
-            start_date,
-            end_date,
-            goal,
-            event_type,
-            author_login,
-            updated_at
-        ) = sprint
-
-        # ==========================================================
-        # Calculate Sprint Progress
-        # ==========================================================
         today = date.today()
+        sprint_list = []
 
-        # Handle missing dates
-        if start_date is None or end_date is None:
-            progress = None
-            status = "Incomplete sprint data"
-            remaining_days = None
-            total_days = None
-        else:
-            total_days = (end_date.date() - start_date.date()).days
-            elapsed_days = (today - start_date.date()).days
+        # ==========================================================
+        # Process Each Sprint
+        # ==========================================================
+        for sprint in sprints:
+            (
+                sprint_id,
+                board_id,
+                name,
+                state,
+                start_date,
+                end_date,
+                goal,
+                event_type,
+                author_login,
+                updated_at
+            ) = sprint
 
-            if today < start_date.date():
-                progress = 0
-                status = "Not Started"
-                remaining_days = total_days
-            elif start_date.date() <= today <= end_date.date():
-                progress = round((elapsed_days / total_days) * 100, 2)
-                status = "In Progress"
-                remaining_days = (end_date.date() - today).days
+            # Compute progress
+            if not start_date or not end_date:
+                progress = None
+                remaining_days = None
+                total_days = None
+                status = "Incomplete sprint data"
             else:
-                progress = 100
-                status = "Completed / Past End Date"
-                remaining_days = 0
+                total_days = (end_date.date() - start_date.date()).days
+                elapsed_days = (today - start_date.date()).days
 
-        # ==========================================================
-        # Response
-        # ==========================================================
-        return {
-            "statusCode": 200,
-            "body": json.dumps({
+                if today < start_date.date():
+                    progress = 0
+                    status = "Not Started"
+                    remaining_days = total_days
+                elif start_date.date() <= today <= end_date.date():
+                    progress = round((elapsed_days / total_days) * 100, 2)
+                    status = "In Progress"
+                    remaining_days = (end_date.date() - today).days
+                else:
+                    progress = 100
+                    status = "Completed / Past End Date"
+                    remaining_days = 0
+
+            sprint_list.append({
                 "sprint_id": sprint_id,
                 "board_id": board_id,
                 "name": name,
@@ -143,6 +123,16 @@ def lambda_handler(event, context):
                 "days_total": total_days,
                 "days_remaining": remaining_days,
                 "last_update": str(updated_at)
+            })
+
+        # ==========================================================
+        # Final Response
+        # ==========================================================
+        return {
+            "statusCode": 200,
+            "body": json.dumps({
+                "count": len(sprint_list),
+                "sprints": sprint_list
             }, default=str)
         }
 

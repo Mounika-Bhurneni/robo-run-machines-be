@@ -4,6 +4,21 @@ import psycopg2
 from datetime import datetime
 import uuid
 
+
+import requests
+from requests.auth import HTTPBasicAuth
+
+def get_jira_user_email(account_id):
+    url = f"https://praveenreddygopidi.atlassian.net/rest/api/3/user?accountId={account_id}"
+    auth = HTTPBasicAuth(os.environ["JIRA_USER"], os.environ["JIRA_API_TOKEN"])
+    headers = {"Accept": "application/json"}
+    response = requests.get(url, headers=headers, auth=auth)
+    if response.status_code == 200:
+        return response.json().get("emailAddress")
+    else:
+        print("Failed to fetch email for", account_id)
+        return None
+
 # ==========================================================
 # PostgreSQL Connection
 # ==========================================================
@@ -124,30 +139,43 @@ def handle_issue_created(issue):
         assignee = fields.get("assignee")
         assignee_id = assignee.get("id") or assignee.get("accountId") if assignee else None
         assignee_name = assignee.get("displayName") if assignee else None
+        assignee_email = get_jira_user_email(assignee_id) if assignee_id else None
+
 
         # --- Fetch reporter ---
         reporter = fields.get("reporter")
         reporter_id = reporter.get("id") or reporter.get("accountId") if reporter else None
         reporter_name = reporter.get("displayName") if reporter else None
+        reporter_email = get_jira_user_email(reporter_id) if reporter_id else None
+
 
         # --- Other fields ---
         status = fields.get("status", {}).get("name") if fields.get("status") else None
         priority = fields.get("priority", {}).get("name") if fields.get("priority") else None
         components = json.dumps(fields.get("components") or [])
 
+        print("Assignee email:===>", assignee_email)
+        print("Reporter email:====>", reporter_email)
+
+
         sql = """
             INSERT INTO jira_issues (
-                id, issue_key, org_id, assignee_user_id, reporter_user_id,
-                assignee_name, reporter_name,
+                id, issue_key, org_id, 
+                assignee_user_id, assignee_name, assignee_email,
+                reporter_user_id, reporter_name, reporter_email,
                 status, priority, component, updated_at, raw
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (issue_key) DO UPDATE
-            SET status = EXCLUDED.status,
-                priority = EXCLUDED.priority,
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (issue_key)
+            DO UPDATE SET
                 assignee_user_id = EXCLUDED.assignee_user_id,
-                reporter_user_id = EXCLUDED.reporter_user_id,
                 assignee_name = EXCLUDED.assignee_name,
+                assignee_email = EXCLUDED.assignee_email,
+                reporter_user_id = EXCLUDED.reporter_user_id,
                 reporter_name = EXCLUDED.reporter_name,
+                reporter_email = EXCLUDED.reporter_email,
+                status = EXCLUDED.status,
+                priority = EXCLUDED.priority,
                 component = EXCLUDED.component,
                 updated_at = EXCLUDED.updated_at,
                 raw = EXCLUDED.raw
@@ -157,10 +185,15 @@ def handle_issue_created(issue):
             str(issue.get("id")),
             issue.get("key"),
             org_id,
+
             assignee_id,
-            reporter_id,
             assignee_name,
+            assignee_email,
+
+            reporter_id,
             reporter_name,
+            reporter_email,
+
             status,
             priority,
             components,
@@ -169,10 +202,11 @@ def handle_issue_created(issue):
         ))
 
         conn.commit()
-        print(f"Issue {issue.get('key')} inserted/updated.")
+        print(f"Issue {issue.get('key')} created/updated with email addresses.")
 
     except Exception as e:
         print("Error in handle_issue_created:", str(e))
+
     finally:
         if cur:
             cur.close()
