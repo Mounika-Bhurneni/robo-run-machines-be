@@ -378,6 +378,57 @@ Resources:
           DB_NAME: !Ref ParamDBName
 
 
+  JiraTasksFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-tasks-today"
+      CodeUri: tasks_today/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 512
+      Layers: [!Ref MyLibLayer]
+      Events:
+        JiraTasksGet:
+          Type: HttpApi
+          Properties:
+            Path: /jira/tasks/today
+            Method: get
+            ApiId: !Ref HttpApi
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+
+
+
+  JiraSprintProgressFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-sprint-progress"
+      CodeUri: jira_sprints_progress/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 512
+      Layers: [!Ref MyLibLayer]
+      Events:
+        JiraSprintProgressGet:
+          Type: HttpApi
+          Properties:
+            Path: /jira/sprint/progress
+            Method: get
+            ApiId: !Ref HttpApi
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+
+
 Outputs:
   HttpApiUrl:
     Description: "Base URL for the HTTP API"
