@@ -26,11 +26,14 @@ def lambda_handler(event, context):
     try:
         # Extract JWT claims
         claims = event.get("requestContext", {}).get("authorizer", {}).get("jwt", {}).get("claims", {})
-        user_role = claims.get("custom:role")
         user_email = claims.get("email")
+        user_role = claims.get("custom:role")  # Cognito custom role
+        sub = claims.get("sub")
 
-        print("User:", user_email)
-        print("Role:", user_role)
+        print("User Email:", user_email)
+        print("User Role:", user_role)
+        print("sub:", sub)
+
 
         # Role check
         if not user_role or user_role not in ALLOWED_ROLES:
