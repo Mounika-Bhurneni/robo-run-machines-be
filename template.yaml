@@ -532,6 +532,7 @@ Resources:
             Path: /reports/generate
             Method: get
             ApiId: !Ref HttpApi
+            RouteKey: GET /reports/generate
             Auth:
               Authorizer: CognitoJwt
       Environment:
@@ -559,6 +560,7 @@ Resources:
             Path: /prs/bottlenecks
             Method: get
             ApiId: !Ref HttpApi
+            RouteKey: GET /prs/bottlenecks
             Auth:
               Authorizer: CognitoJwt
       Environment:
@@ -587,6 +589,7 @@ Resources:
             Path: /developers/workload
             Method: get
             ApiId: !Ref HttpApi
+            RouteKey: GET /developers/workload
             Auth:
               Authorizer: CognitoJwt
       Environment:
