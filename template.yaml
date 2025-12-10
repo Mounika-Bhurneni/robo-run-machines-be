@@ -532,7 +532,6 @@ Resources:
             Path: /reports/generate
             Method: get
             ApiId: !Ref HttpApi
-            RouteKey: GET /reports/generate
             Auth:
               Authorizer: CognitoJwt
       Environment:
@@ -541,35 +540,6 @@ Resources:
           DB_USER: !Ref ParamDBUser
           DB_PASSWORD: !Ref ParamDBPassword
           DB_NAME: !Ref ParamDBName
-
-
-  PRBottleneckFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName: !Sub "${AWS::StackName}-pr-bottleneck"
-      CodeUri: pr_bottleneck/
-      Handler: app.lambda_handler
-      Runtime: python3.10
-      Timeout: 30
-      MemorySize: 512
-      Layers: [!Ref MyLibLayer]
-      Events:
-        PRBottleneckGet:
-          Type: HttpApi
-          Properties:
-            Path: /prs/bottlenecks
-            Method: get
-            ApiId: !Ref HttpApi
-            RouteKey: GET /prs/bottlenecks
-            Auth:
-              Authorizer: CognitoJwt
-      Environment:
-        Variables:
-          DB_HOST: !Ref ParamDBHost
-          DB_USER: !Ref ParamDBUser
-          DB_PASSWORD: !Ref ParamDBPassword
-          DB_NAME: !Ref ParamDBName
-          PR_IDLE_THRESHOLD_DAYS: "3"
 
 
   DeveloperWorkloadFunction:
@@ -589,7 +559,6 @@ Resources:
             Path: /developers/workload
             Method: get
             ApiId: !Ref HttpApi
-            RouteKey: GET /developers/workload
             Auth:
               Authorizer: CognitoJwt
       Environment:
@@ -598,6 +567,34 @@ Resources:
           DB_USER: !Ref ParamDBUser
           DB_PASSWORD: !Ref ParamDBPassword
           DB_NAME: !Ref ParamDBName
+
+
+  PRBottleneckFunction:
+      Type: AWS::Serverless::Function
+      Properties:
+        FunctionName: !Sub "${AWS::StackName}-pr-bottleneck"
+        CodeUri: pr_bottleneck/
+        Handler: app.lambda_handler
+        Runtime: python3.10
+        Timeout: 30
+        MemorySize: 512
+        Layers: [!Ref MyLibLayer]
+        Events:
+          PRBottleneckGet:
+            Type: HttpApi
+            Properties:
+              Path: /prs/bottlenecks
+              Method: get
+              ApiId: !Ref HttpApi
+              Auth:
+                Authorizer: CognitoJwt
+        Environment:
+          Variables:
+            DB_HOST: !Ref ParamDBHost
+            DB_USER: !Ref ParamDBUser
+            DB_PASSWORD: !Ref ParamDBPassword
+            DB_NAME: !Ref ParamDBName
+            PR_IDLE_THRESHOLD_DAYS: "3"
 
 
 Outputs:
