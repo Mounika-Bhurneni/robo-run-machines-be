@@ -529,7 +529,7 @@ Resources:
         GenerateReportGet:
           Type: HttpApi
           Properties:
-            Path: reports/generate
+            Path: /reports/generate
             Method: get
             ApiId: !Ref HttpApi
             Auth:
@@ -556,7 +556,7 @@ Resources:
         PRBottleneckGet:
           Type: HttpApi
           Properties:
-            Path: prs/bottlenecks
+            Path: /prs/bottlenecks
             Method: get
             ApiId: !Ref HttpApi
             Auth:
@@ -584,7 +584,7 @@ Resources:
         DeveloperWorkloadGet:
           Type: HttpApi
           Properties:
-            Path: developers/workload
+            Path: /developers/workload
             Method: get
             ApiId: !Ref HttpApi
             Auth:
