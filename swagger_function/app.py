@@ -121,25 +121,25 @@ forgot_password_model = swagger_ns.model(
     }
 )
 
-# @swagger_ns.route("/forgotPassword")
-# class ForgotPassword(Resource):
+@swagger_ns.route("/forgotPassword")
+class ForgotPassword(Resource):
 
-#     @swagger_ns.expect(forgot_password_model)
-#     def post(self):
-#         body = request.json
+    @swagger_ns.expect(forgot_password_model)
+    def post(self):
+        body = request.json
 
-#         email = body.get("email")
-#         if not email:
-#             return jsonify({"message": "email is required"}), 400
+        email = body.get("email")
+        if not email:
+            return jsonify({"message": "email is required"}), 400
 
-#         # ===== Mocked Response =====
-#         response = {
-#             "email": email,
-#             "status": "Reset link sent successfully",
-#             "timestamp": "2025-12-11T16:45:00Z"
-#         }
+        # ===== Mocked Response =====
+        response = {
+            "email": email,
+            "status": "Reset link sent successfully",
+            "timestamp": "2025-12-11T16:45:00Z"
+        }
 
-#         return jsonify(response), 200
+        return jsonify(response), 200
 
 
 confirm_forgot_password_model = swagger_ns.model(
@@ -163,30 +163,30 @@ confirm_forgot_password_model = swagger_ns.model(
     }
 )
 
-# @swagger_ns.route("/confirmForgotPassword")
-# class ConfirmForgotPassword(Resource):
+@swagger_ns.route("/confirmForgotPassword")
+class ConfirmForgotPassword(Resource):
 
-#     @swagger_ns.expect(confirm_forgot_password_model)
-#     def post(self):
-#         body = request.json
+    @swagger_ns.expect(confirm_forgot_password_model)
+    def post(self):
+        body = request.json
 
-#         email = body.get("email")
-#         otp = body.get("otp")
-#         new_password = body.get("new_password")
+        email = body.get("email")
+        otp = body.get("otp")
+        new_password = body.get("new_password")
 
-#         # ===== Validation =====
-#         missing_fields = [f for f in ["email", "otp", "new_password"] if not body.get(f)]
-#         if missing_fields:
-#             return jsonify({"message": f"Missing fields: {', '.join(missing_fields)}"}), 400
+        # ===== Validation =====
+        missing_fields = [f for f in ["email", "otp", "new_password"] if not body.get(f)]
+        if missing_fields:
+            return jsonify({"message": f"Missing fields: {', '.join(missing_fields)}"}), 400
 
-#         # ===== Mocked Response =====
-#         response = {
-#             "email": email,
-#             "status": "Password updated successfully",
-#             "timestamp": "2025-12-11T16:55:00Z"
-#         }
+        # ===== Mocked Response =====
+        response = {
+            "email": email,
+            "status": "Password updated successfully",
+            "timestamp": "2025-12-11T16:55:00Z"
+        }
 
-#         return jsonify(response), 200
+        return jsonify(response), 200
 
 
 

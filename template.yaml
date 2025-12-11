@@ -616,7 +616,47 @@ Resources:
             ApiId: !Ref HttpApi
             Path: /swagger/{proxy+}
             Method: ANY
-        
+
+
+  ForgotPasswordLambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-forgot-password"
+      CodeUri: forgot_password/
+      Events:
+        ForgotPassword:
+          Type: HttpApi
+          Properties:
+            Path: /forgotPassword
+            Method: post
+            ApiId: !Ref HttpApi
+      Layers:
+        - !Ref MyLayer
+        - !Ref MyLibLayer
+      Environment:
+        Variables:   
+          APP_CLIENT_ID: !Ref ParamCognitoClientId 
+
+  ConfirmForgotPasswordLambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-confirm-forgot-password"
+      CodeUri: confirm_forgot_password/
+      Events:
+        ConfirmForgotPassword:
+          Type: HttpApi
+          Properties:
+            Path: /confirmForgotPassword
+            Method: post
+            ApiId: !Ref HttpApi
+      Layers:
+        - !Ref MyLayer
+        - !Ref MyLibLayer
+      Environment:
+        Variables:
+          APP_CLIENT_ID: !Ref ParamCognitoClientId  
+
+
 Outputs:
   HttpApiUrl:
     Description: "Base URL for the HTTP API"
