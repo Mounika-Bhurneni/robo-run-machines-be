@@ -26,7 +26,7 @@ authorizations = {
 api = Api(
     app,
     version="1.0",
-    title="LMS API Endpoints ",
+    title="Robo Run API Endpoints ",
     description="Swagger for AWS Lambda function",
     authorizations=authorizations,
     security="apikey"
@@ -187,6 +187,417 @@ class ConfirmForgotPassword(Resource):
         }
 
         return jsonify(response), 200
+
+
+
+# Model for query parameters if any (optional)
+GitRecentQueryModel = swagger_ns.model(
+    "GitRecentQueryModel",
+    {
+        "from_date": fields.String(required=True, description="Start date in YYYY-MM-DD format"),
+        "to_date": fields.String(required=True, description="End date in YYYY-MM-DD format")
+    }
+)
+
+@swagger_ns.route("/git/recent")
+class GitRecent(Resource):
+    @swagger_ns.expect(GitRecentQueryModel, validate=True)
+    def get(self):
+        """Fetch recent Git activity"""
+        # Get query params
+        from_date = request.args.get("from_date")
+        to_date = request.args.get("to_date")
+
+        # Validate required query params
+        if not from_date or not to_date:
+            missing = "from_date" if not from_date else "to_date"
+            return jsonify({"message": f"{missing} is required"}), 400
+
+        # ===== Here you would normally fetch data from Git or DB =====
+        # Mock response for demonstration
+        response = {
+            "message": "Recent Git activity fetched successfully",
+            "data": [
+                {
+                    "repo": "lms",
+                    "pr_number": 101,
+                    "title": "Fix login bug",
+                    "action": "merged",
+                    "date": from_date
+                },
+                {
+                    "repo": "lms",
+                    "pr_number": 102,
+                    "title": "Add swagger endpoint",
+                    "action": "opened",
+                    "date": to_date
+                }
+            ]
+        }
+
+        return jsonify(response), 200
+
+
+
+
+
+# Model for query parameters (optional, adjust as needed)
+JiraTeamInsightsQueryModel = swagger_ns.model(
+    "JiraTeamInsightsQueryModel",
+    {
+        "from_date": fields.String(required=True, description="Start date in YYYY-MM-DD format"),
+        "to_date": fields.String(required=True, description="End date in YYYY-MM-DD format")
+    }
+)
+
+@swagger_ns.route("/jira/team/insights")
+class JiraTeamInsights(Resource):
+    @swagger_ns.expect(JiraTeamInsightsQueryModel, validate=True)
+    def get(self):
+        """Fetch Jira team insights"""
+        from_date = request.args.get("from_date")
+        to_date = request.args.get("to_date")
+
+        # Validate required query params
+        if not from_date or not to_date:
+            missing = "from_date" if not from_date else "to_date"
+            return jsonify({"message": f"{missing} is required"}), 400
+
+        # Construct the external API URL
+        base_url = os.environ.get("ROBO_RUN_BASE_URL", "http://example.com")
+        url = f"{base_url}/jira/team/insights?from_date={from_date}&to_date={to_date}"
+
+        try:
+            # Call the external API
+            resp = requests.get(url)
+            resp.raise_for_status()
+            data = resp.json()
+        except requests.exceptions.RequestException as e:
+            return jsonify({"message": "Failed to fetch Jira team insights", "error": str(e)}), 500
+
+        return jsonify({
+            "message": "Jira team insights fetched successfully",
+            "data": data
+        }), 200
+
+
+
+
+# Model for query parameters
+ReportsGenerateQueryModel = swagger_ns.model(
+    "ReportsGenerateQueryModel",
+    {
+        "team": fields.String(required=True, description="Team name, e.g., backend"),
+        "from_date": fields.String(required=True, description="Start date in YYYY-MM-DD format"),
+        "to_date": fields.String(required=True, description="End date in YYYY-MM-DD format"),
+        "type": fields.String(required=True, description="Report type, e.g., full or summary")
+    }
+)
+
+@swagger_ns.route("/reports/generate")
+class ReportsGenerate(Resource):
+    @swagger_ns.expect(ReportsGenerateQueryModel, validate=True)
+    def get(self):
+        """Generate team reports"""
+        team = request.args.get("team")
+        from_date = request.args.get("from_date")
+        to_date = request.args.get("to_date")
+        report_type = request.args.get("type")
+
+        # Validate required query params
+        for param_name, param_value in {"team": team, "from_date": from_date, "to_date": to_date, "type": report_type}.items():
+            if not param_value:
+                return jsonify({"message": f"{param_name} is required"}), 400
+
+        # Mock response
+        response = {
+            "message": "Report generated successfully",
+            "report": {
+                "team": team,
+                "from_date": from_date,
+                "to_date": to_date,
+                "type": report_type,
+                "url": f"https://example.com/reports/{team}_{from_date}_to_{to_date}_{report_type}.pdf"
+            }
+        }
+
+        return jsonify(response), 200
+
+
+
+# Model for query parameters
+ActivityRecentQueryModel = swagger_ns.model(
+    "ActivityRecentQueryModel",
+    {
+        "from_date": fields.String(required=True, description="Start date in YYYY-MM-DD format"),
+        "to_date": fields.String(required=True, description="End date in YYYY-MM-DD format")
+    }
+)
+
+@swagger_ns.route("/activity/recent")
+class ActivityRecent(Resource):
+    @swagger_ns.expect(ActivityRecentQueryModel, validate=True)
+    def get(self):
+        """Fetch recent activity"""
+        from_date = request.args.get("from_date")
+        to_date = request.args.get("to_date")
+
+        # Validate required query params
+        if not from_date or not to_date:
+            missing = "from_date" if not from_date else "to_date"
+            return {"message": f"{missing} is required"}, 400
+
+        # Mock response
+        response = {
+            "message": "Recent activity fetched successfully",
+            "data": [
+                {"activity": "Pull request merged", "repo": "lms", "date": from_date},
+                {"activity": "Issue closed", "repo": "lms", "date": to_date}
+            ]
+        }
+
+        return response, 200
+
+
+
+# Model for query parameters (if needed, optional here since none are specified)
+AnalyticsWeeklyQueryModel = swagger_ns.model(
+    "AnalyticsWeeklyQueryModel",
+    {
+        "week_start": fields.String(required=False, description="Week start date in YYYY-MM-DD format"),
+        "week_end": fields.String(required=False, description="Week end date in YYYY-MM-DD format")
+    }
+)
+
+@swagger_ns.route("/analytics/weekly")
+class AnalyticsWeekly(Resource):
+    @swagger_ns.expect(AnalyticsWeeklyQueryModel, validate=False)
+    def get(self):
+        """Fetch weekly analytics"""
+        week_start = request.args.get("week_start")
+        week_end = request.args.get("week_end")
+
+        # Mock response
+        response = {
+            "message": "Weekly analytics fetched successfully",
+            "analytics": {
+                "week_start": week_start or "2025-12-01",
+                "week_end": week_end or "2025-12-07",
+                "total_activities": 42,
+                "active_teams": ["backend", "frontend", "qa"],
+                "highlights": [
+                    {"team": "backend", "activity_count": 15},
+                    {"team": "frontend", "activity_count": 12},
+                    {"team": "qa", "activity_count": 15}
+                ]
+            }
+        }
+
+        return response, 200
+
+
+
+# Model for query parameters (optional, e.g., to filter by team or date range)
+DevelopersWorkloadQueryModel = swagger_ns.model(
+    "DevelopersWorkloadQueryModel",
+    {
+        "team": fields.String(required=False, description="Team name, e.g., backend"),
+        "from_date": fields.String(required=False, description="Start date in YYYY-MM-DD format"),
+        "to_date": fields.String(required=False, description="End date in YYYY-MM-DD format")
+    }
+)
+
+@swagger_ns.route("/developers/workload")
+class DevelopersWorkload(Resource):
+    @swagger_ns.expect(DevelopersWorkloadQueryModel, validate=False)
+    def get(self):
+        """Fetch developer workload"""
+        team = request.args.get("team")
+        from_date = request.args.get("from_date")
+        to_date = request.args.get("to_date")
+
+        # Mock response
+        response = {
+            "message": "Developer workload fetched successfully",
+            "workload": [
+                {"developer": "Alice", "team": "backend", "tasks_assigned": 5, "tasks_completed": 4},
+                {"developer": "Bob", "team": "frontend", "tasks_assigned": 6, "tasks_completed": 6},
+                {"developer": "Charlie", "team": "qa", "tasks_assigned": 4, "tasks_completed": 3}
+            ]
+        }
+
+        # Optionally filter by team if provided
+        if team:
+            response["workload"] = [w for w in response["workload"] if w["team"] == team]
+
+        return response, 200
+
+
+
+# Model for query parameters (optional, e.g., to filter by repo or date range)
+PRsBottlenecksQueryModel = swagger_ns.model(
+    "PRsBottlenecksQueryModel",
+    {
+        "repo": fields.String(required=False, description="Repository name, e.g., lms"),
+        "from_date": fields.String(required=False, description="Start date in YYYY-MM-DD format"),
+        "to_date": fields.String(required=False, description="End date in YYYY-MM-DD format")
+    }
+)
+
+@swagger_ns.route("/prs/bottlenecks")
+class PRsBottlenecks(Resource):
+    @swagger_ns.expect(PRsBottlenecksQueryModel, validate=False)
+    def get(self):
+        """Fetch pull request bottlenecks"""
+        repo = request.args.get("repo")
+        from_date = request.args.get("from_date")
+        to_date = request.args.get("to_date")
+
+        # Mock response
+        bottlenecks = [
+            {"pr_number": 101, "repo": "lms", "title": "Fix login bug", "days_open": 5},
+            {"pr_number": 102, "repo": "lms", "title": "Add swagger endpoint", "days_open": 8},
+            {"pr_number": 103, "repo": "cms", "title": "Update README", "days_open": 3}
+        ]
+
+        # Optionally filter by repo if provided
+        if repo:
+            bottlenecks = [b for b in bottlenecks if b["repo"] == repo]
+
+        response = {
+            "message": "PR bottlenecks fetched successfully",
+            "data": bottlenecks
+        }
+
+        return response, 200
+
+
+
+# Model for query parameters (optional, e.g., to filter by sprint or team)
+JiraSprintProgressQueryModel = swagger_ns.model(
+    "JiraSprintProgressQueryModel",
+    {
+        "sprint_id": fields.String(required=False, description="Jira sprint ID"),
+        "team": fields.String(required=False, description="Team name, e.g., backend")
+    }
+)
+
+@swagger_ns.route("/jira/sprint/progress")
+class JiraSprintProgress(Resource):
+    @swagger_ns.expect(JiraSprintProgressQueryModel, validate=False)
+    def get(self):
+        """Fetch Jira sprint progress"""
+        sprint_id = request.args.get("sprint_id")
+        team = request.args.get("team")
+
+        # Mock response
+        progress_data = [
+            {"sprint_id": "SPR-101", "team": "backend", "completed_stories": 12, "total_stories": 15},
+            {"sprint_id": "SPR-102", "team": "frontend", "completed_stories": 8, "total_stories": 10},
+            {"sprint_id": "SPR-103", "team": "qa", "completed_stories": 5, "total_stories": 7}
+        ]
+
+        # Filter by sprint_id or team if provided
+        if sprint_id:
+            progress_data = [p for p in progress_data if p["sprint_id"] == sprint_id]
+        if team:
+            progress_data = [p for p in progress_data if p["team"] == team]
+
+        response = {
+            "message": "Jira sprint progress fetched successfully",
+            "data": progress_data
+        }
+
+        return response, 200
+
+
+
+
+# Model for query parameters (optional, e.g., to filter by team or assignee)
+JiraTasksTodayQueryModel = swagger_ns.model(
+    "JiraTasksTodayQueryModel",
+    {
+        "team": fields.String(required=False, description="Team name, e.g., backend"),
+        "assignee": fields.String(required=False, description="Developer username or email")
+    }
+)
+
+@swagger_ns.route("/jira/tasks/today")
+class JiraTasksToday(Resource):
+    @swagger_ns.expect(JiraTasksTodayQueryModel, validate=False)
+    def get(self):
+        """Fetch Jira tasks for today"""
+        team = request.args.get("team")
+        assignee = request.args.get("assignee")
+
+        # Mock response
+        tasks_today = [
+            {"task_id": "TASK-101", "title": "Fix login bug", "team": "backend", "assignee": "Alice", "status": "In Progress"},
+            {"task_id": "TASK-102", "title": "Update API docs", "team": "frontend", "assignee": "Bob", "status": "To Do"},
+            {"task_id": "TASK-103", "title": "Test payment flow", "team": "qa", "assignee": "Charlie", "status": "In Progress"}
+        ]
+
+        # Filter by team or assignee if provided
+        if team:
+            tasks_today = [t for t in tasks_today if t["team"] == team]
+        if assignee:
+            tasks_today = [t for t in tasks_today if t["assignee"] == assignee]
+
+        response = {
+            "message": "Today's Jira tasks fetched successfully",
+            "data": tasks_today
+        }
+
+        return response, 200
+
+
+
+# Model for request body
+CognitoCreateUserModel = swagger_ns.model(
+    "CognitoCreateUserModel",
+    {
+        "email": fields.String(required=True, description="User email"),
+        "password": fields.String(required=True, description="User password"),
+        "role": fields.String(
+            required=True,
+            description='User role, one of ["DEV", "QA", "MANAGER", "DEV_MANAGER"]'
+        )
+    }
+)
+
+@swagger_ns.route("/cognito/create-user")
+class CognitoCreateUser(Resource):
+    @swagger_ns.expect(CognitoCreateUserModel, validate=True)
+    def post(self):
+        """Create a new Cognito user"""
+        body = request.json
+
+        # Required fields
+        required_fields = ["email", "password", "role"]
+        for field in required_fields:
+            if field not in body:
+                return {"message": f"{field} is required"}, 400
+
+        email = body["email"]
+        password = body["password"]
+        role = body["role"]
+
+        # Validate role
+        allowed_roles = ["DEV", "QA", "MANAGER", "DEV_MANAGER"]
+        if role not in allowed_roles:
+            return {"message": f"role must be one of {allowed_roles}"}, 400
+
+        # ===== Here you would normally create the user in Cognito =====
+        # Mock response
+        response = {
+            "message": "User created successfully",
+            "user": {
+                "email": email,
+                "role": role
+            }
+        }
+
+        return response, 201
 
 
 # -----------------------------
