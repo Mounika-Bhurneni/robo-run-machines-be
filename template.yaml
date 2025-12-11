@@ -630,9 +630,6 @@ Resources:
             Path: /forgotPassword
             Method: post
             ApiId: !Ref HttpApi
-      Layers:
-        - !Ref MyLayer
-        - !Ref MyLibLayer
       Environment:
         Variables:   
           APP_CLIENT_ID: !Ref ParamCognitoClientId 
@@ -649,9 +646,6 @@ Resources:
             Path: /confirmForgotPassword
             Method: post
             ApiId: !Ref HttpApi
-      Layers:
-        - !Ref MyLayer
-        - !Ref MyLibLayer
       Environment:
         Variables:
           APP_CLIENT_ID: !Ref ParamCognitoClientId  
