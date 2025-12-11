@@ -616,9 +616,6 @@ Resources:
             ApiId: !Ref HttpApi
             Path: /swagger/{proxy+}
             Method: ANY
-      Layers:
-        - !Ref MyLayer
-        - !Ref MyLibLayer
         
 Outputs:
   HttpApiUrl:
