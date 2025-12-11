@@ -597,6 +597,29 @@ Resources:
             PR_IDLE_THRESHOLD_DAYS: "3"
 
 
+  SwaggerLambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: swagger_function/
+      Handler: app.lambda_handler
+      Runtime: python3.9
+      Events:
+        ApiRoot:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /swagger/docs
+            Method: ANY
+        ApiProxy:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /swagger/{proxy+}
+            Method: ANY
+      Layers:
+        - !Ref MyLayer
+        - !Ref MyLibLayer
+        
 Outputs:
   HttpApiUrl:
     Description: "Base URL for the HTTP API"
