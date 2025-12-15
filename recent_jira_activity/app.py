@@ -1,6 +1,7 @@
 import os
 import json
 import psycopg2
+from datetime import datetime, timezone
 
 ALLOWED_ROLES = ["DEV", "QA", "MANAGER", "DEV_MANAGER"]
 
@@ -17,6 +18,34 @@ def get_connection():
     )
 
 # ==========================================================
+# Time Ago Helper
+# ==========================================================
+from datetime import datetime, timezone
+
+def time_ago(ts):
+    # Make DB timestamp timezone-aware (UTC)
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+
+    now = datetime.now(timezone.utc)
+    diff = now - ts
+
+    seconds = int(diff.total_seconds())
+    minutes = seconds // 60
+    hours = minutes // 60
+    days = hours // 24
+
+    if seconds < 60:
+        return "just now"
+    elif minutes < 60:
+        return f"{minutes} min ago"
+    elif hours < 24:
+        return f"{hours} h ago"
+    else:
+        return f"{days} d ago"
+
+
+# ==========================================================
 # Lambda Handler
 # ==========================================================
 def lambda_handler(event, context):
@@ -28,7 +57,6 @@ def lambda_handler(event, context):
             .get("claims", {})
         )
 
-        user_email = claims.get("email")
         user_role = claims.get("custom:role")
 
         if not user_role or user_role not in ALLOWED_ROLES:
@@ -41,81 +69,45 @@ def lambda_handler(event, context):
         cur = conn.cursor()
 
         # ================================================================
-        # RECENT JIRA ACTIVITIES (Unified Feed)
+        # RECENT JIRA TICKETS (Ticket-centric)
         # ================================================================
         cur.execute("""
             SELECT
-                'ISSUE' AS activity_type,
-                issue_key AS reference_id,
-                NULL AS issue_id,
-                COALESCE(assignee_name, reporter_name) AS author,
-                status AS summary,
-                'ISSUE_UPDATED' AS event_type,
-                updated_at AS timestamp
+                issue_key,
+                assignee_name,
+                updated_at,
+                status,
+                priority,
+                LEFT(raw->'fields'->>'summary', 120) AS summary
             FROM jira_issues
-
-            UNION ALL
-
-            SELECT
-                'COMMENT' AS activity_type,
-                comment_id::text AS reference_id,
-                issue_id::text AS issue_id,
-                author_login AS author,
-                comment_body AS summary,
-                event_type,
-                timestamp
-            FROM jira_issue_comments
-
-            UNION ALL
-
-            SELECT
-                'LINK' AS activity_type,
-                link_id::text AS reference_id,
-                source_issue_id::text AS issue_id,
-                author_login AS author,
-                link_type AS summary,
-                event_type,
-                timestamp
-            FROM jira_issue_links
-
-            UNION ALL
-
-            SELECT
-                'SPRINT' AS activity_type,
-                sprint_id::text AS reference_id,
-                NULL AS issue_id,
-                author_login AS author,
-                name AS summary,
-                event_type,
-                timestamp
-            FROM jira_sprints
-
-            UNION ALL
-
-            SELECT
-                'SUBTASK' AS activity_type,
-                subtask_id::text AS reference_id,
-                parent_issue_id::text AS issue_id,
-                author_login AS author,
-                summary,
-                event_type,
-                timestamp
-            FROM jira_subtasks
-
-            ORDER BY timestamp DESC
+            ORDER BY updated_at DESC
             LIMIT 20
         """)
 
-        jira_recent_activities = cur.fetchall()
+        rows = cur.fetchall()
+
+        jira_tickets = []
+        for row in rows:
+            jira_tickets.append({
+                "jira_ticket_id": row[0],
+                "assignee_name": row[1],
+                "timestamp": row[2],
+                "time_ago": time_ago(row[2]),
+                "status": row[3],
+                "priority": row[4],
+                "summary": row[5]
+            })
 
         cur.close()
         conn.close()
 
         return {
             "statusCode": 200,
-            "body": json.dumps({
-                "jira_recent_activities": jira_recent_activities
-            }, default=str)
+            "body": json.dumps(
+                {"jira_recent_tickets": jira_tickets},
+                default=str,
+                indent=2
+            )
         }
 
     except Exception as e:

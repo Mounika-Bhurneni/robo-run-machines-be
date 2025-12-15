@@ -139,14 +139,14 @@ def handle_issue_created(issue):
         assignee = fields.get("assignee")
         assignee_id = assignee.get("id") or assignee.get("accountId") if assignee else None
         assignee_name = assignee.get("displayName") if assignee else None
-        assignee_email = get_jira_user_email(assignee_id) if assignee_id else None
+        assignee_email = assignee_id 
 
 
         # --- Fetch reporter ---
         reporter = fields.get("reporter")
         reporter_id = reporter.get("id") or reporter.get("accountId") if reporter else None
         reporter_name = reporter.get("displayName") if reporter else None
-        reporter_email = get_jira_user_email(reporter_id) if reporter_id else None
+        reporter_email = reporter_id 
 
 
         # --- Other fields ---

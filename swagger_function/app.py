@@ -8,6 +8,7 @@ from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
 from botocore.exceptions import ClientError
 import requests
+import os
 
 # -----------------------------
 # Flask app & RESTX API setup
@@ -16,10 +17,10 @@ app = flask.Flask(__name__)
 
 authorizations = {
     "BearerAuth": {
-        "type": "http",
-        "scheme": "bearer",
-        "bearerFormat": "JWT",
-        "description": "Enter your Bearer token here"
+        "type": "apiKey",
+        "in": "header",
+        "name": "Authorization",
+        "description": "Add 'Bearer <token>'"
     }
 }
 
@@ -29,7 +30,7 @@ api = Api(
     title="Robo Run API Endpoints ",
     description="Swagger for AWS Lambda function",
     authorizations=authorizations,
-    security="apikey"
+    security="BearerAuth"
 )
 
 swagger_ns = Namespace("", description="Cognito Proxy Namespace")
@@ -64,6 +65,12 @@ def require_bearer_auth(func):
     return wrapper
 
 
+
+@swagger_ns.route("/test")
+class Test(Resource):
+    @swagger_ns.doc(security="BearerAuth")
+    def post(self):
+        return {"msg": "OK"}
 
 # -----------------------------
 # Swagger model for Cognito request
@@ -191,30 +198,39 @@ class ConfirmForgotPassword(Resource):
 
 
 # Model for query parameters if any (optional)
-GitRecentQueryModel = swagger_ns.model(
-    "GitRecentQueryModel",
-    {
-        "from_date": fields.String(required=True, description="Start date in YYYY-MM-DD format"),
-        "to_date": fields.String(required=True, description="End date in YYYY-MM-DD format")
-    }
+# =============================
+# Parser for GET Query Params
+# =============================
+git_recent_parser = swagger_ns.parser()
+git_recent_parser.add_argument(
+    "from_date",
+    type=str,
+    required=True,
+    location="args",
+    help="Start date in YYYY-MM-DD format"
 )
+git_recent_parser.add_argument(
+    "to_date",
+    type=str,
+    required=True,
+    location="args",
+    help="End date in YYYY-MM-DD format"
+)
+
 
 @swagger_ns.route("/git/recent")
 class GitRecent(Resource):
-    @swagger_ns.expect(GitRecentQueryModel, validate=True)
+
+    @swagger_ns.doc(security="BearerAuth")
+    # @swagger_ns.expect(git_recent_parser)   # <-- FIXED: parser instead of model
     def get(self):
         """Fetch recent Git activity"""
-        # Get query params
-        from_date = request.args.get("from_date")
-        to_date = request.args.get("to_date")
 
-        # Validate required query params
-        if not from_date or not to_date:
-            missing = "from_date" if not from_date else "to_date"
-            return jsonify({"message": f"{missing} is required"}), 400
+        args = git_recent_parser.parse_args()
+        from_date = args.get("from_date")
+        to_date = args.get("to_date")
 
-        # ===== Here you would normally fetch data from Git or DB =====
-        # Mock response for demonstration
+        # Mock response
         response = {
             "message": "Recent Git activity fetched successfully",
             "data": [
@@ -252,7 +268,8 @@ JiraTeamInsightsQueryModel = swagger_ns.model(
 
 @swagger_ns.route("/jira/team/insights")
 class JiraTeamInsights(Resource):
-    @swagger_ns.expect(JiraTeamInsightsQueryModel, validate=True)
+    @swagger_ns.doc(security="BearerAuth")
+    # @swagger_ns.expect(JiraTeamInsightsQueryModel, validate=True)
     def get(self):
         """Fetch Jira team insights"""
         from_date = request.args.get("from_date")
@@ -283,31 +300,62 @@ class JiraTeamInsights(Resource):
 
 
 
-# Model for query parameters
-ReportsGenerateQueryModel = swagger_ns.model(
-    "ReportsGenerateQueryModel",
-    {
-        "team": fields.String(required=True, description="Team name, e.g., backend"),
-        "from_date": fields.String(required=True, description="Start date in YYYY-MM-DD format"),
-        "to_date": fields.String(required=True, description="End date in YYYY-MM-DD format"),
-        "type": fields.String(required=True, description="Report type, e.g., full or summary")
-    }
+# ==========================
+# Parser for GET query params
+# ==========================
+reports_generate_parser = swagger_ns.parser()
+
+reports_generate_parser.add_argument(
+    "team",
+    type=str,
+    required=True,
+    location="args",
+    help="Team name, e.g., backend",
+    default="backend"
 )
+
+reports_generate_parser.add_argument(
+    "from_date",
+    type=str,
+    required=True,
+    location="args",
+    help="Start date in YYYY-MM-DD format",
+    default="2025-01-01"
+)
+
+reports_generate_parser.add_argument(
+    "to_date",
+    type=str,
+    required=True,
+    location="args",
+    help="End date in YYYY-MM-DD format",
+    default="2025-12-31"
+)
+
+reports_generate_parser.add_argument(
+    "type",
+    type=str,
+    required=True,
+    location="args",
+    help="Report type, e.g., full or summary",
+    default="full"
+)
+
 
 @swagger_ns.route("/reports/generate")
 class ReportsGenerate(Resource):
-    @swagger_ns.expect(ReportsGenerateQueryModel, validate=True)
+
+    @swagger_ns.doc(security="BearerAuth")
+    @swagger_ns.expect(reports_generate_parser)  # ✔️ FIXED
     def get(self):
         """Generate team reports"""
-        team = request.args.get("team")
-        from_date = request.args.get("from_date")
-        to_date = request.args.get("to_date")
-        report_type = request.args.get("type")
 
-        # Validate required query params
-        for param_name, param_value in {"team": team, "from_date": from_date, "to_date": to_date, "type": report_type}.items():
-            if not param_value:
-                return jsonify({"message": f"{param_name} is required"}), 400
+        args = reports_generate_parser.parse_args()
+
+        team = args["team"]
+        from_date = args["from_date"]
+        to_date = args["to_date"]
+        report_type = args["type"]
 
         # Mock response
         response = {
@@ -325,29 +373,40 @@ class ReportsGenerate(Resource):
 
 
 
+
 # Model for query parameters
-ActivityRecentQueryModel = swagger_ns.model(
-    "ActivityRecentQueryModel",
-    {
-        "from_date": fields.String(required=True, description="Start date in YYYY-MM-DD format"),
-        "to_date": fields.String(required=True, description="End date in YYYY-MM-DD format")
-    }
+activity_recent_parser = swagger_ns.parser()
+activity_recent_parser.add_argument(
+    "from_date",
+    type=str,
+    required=True,
+    help="Start date in YYYY-MM-DD format",
+    location="args",
+    default="2025-01-01"
+)
+activity_recent_parser.add_argument(
+    "to_date",
+    type=str,
+    required=True,
+    help="End date in YYYY-MM-DD format",
+    location="args",
+    default="2025-12-01"
 )
 
 @swagger_ns.route("/activity/recent")
 class ActivityRecent(Resource):
-    @swagger_ns.expect(ActivityRecentQueryModel, validate=True)
+    @swagger_ns.doc(security="BearerAuth")
+    @swagger_ns.expect(activity_recent_parser)
     def get(self):
         """Fetch recent activity"""
+
         from_date = request.args.get("from_date")
         to_date = request.args.get("to_date")
 
-        # Validate required query params
         if not from_date or not to_date:
             missing = "from_date" if not from_date else "to_date"
             return {"message": f"{missing} is required"}, 400
 
-        # Mock response
         response = {
             "message": "Recent activity fetched successfully",
             "data": [
@@ -357,6 +416,7 @@ class ActivityRecent(Resource):
         }
 
         return response, 200
+
 
 
 
@@ -371,7 +431,7 @@ AnalyticsWeeklyQueryModel = swagger_ns.model(
 
 @swagger_ns.route("/analytics/weekly")
 class AnalyticsWeekly(Resource):
-    @swagger_ns.expect(AnalyticsWeeklyQueryModel, validate=False)
+    @swagger_ns.doc(security="BearerAuth")
     def get(self):
         """Fetch weekly analytics"""
         week_start = request.args.get("week_start")
@@ -409,7 +469,7 @@ DevelopersWorkloadQueryModel = swagger_ns.model(
 
 @swagger_ns.route("/developers/workload")
 class DevelopersWorkload(Resource):
-    @swagger_ns.expect(DevelopersWorkloadQueryModel, validate=False)
+    @swagger_ns.doc(security="BearerAuth")
     def get(self):
         """Fetch developer workload"""
         team = request.args.get("team")
@@ -446,7 +506,7 @@ PRsBottlenecksQueryModel = swagger_ns.model(
 
 @swagger_ns.route("/prs/bottlenecks")
 class PRsBottlenecks(Resource):
-    @swagger_ns.expect(PRsBottlenecksQueryModel, validate=False)
+    @swagger_ns.doc(security="BearerAuth")
     def get(self):
         """Fetch pull request bottlenecks"""
         repo = request.args.get("repo")
@@ -484,7 +544,7 @@ JiraSprintProgressQueryModel = swagger_ns.model(
 
 @swagger_ns.route("/jira/sprint/progress")
 class JiraSprintProgress(Resource):
-    @swagger_ns.expect(JiraSprintProgressQueryModel, validate=False)
+    @swagger_ns.doc(security="BearerAuth")
     def get(self):
         """Fetch Jira sprint progress"""
         sprint_id = request.args.get("sprint_id")
@@ -514,17 +574,9 @@ class JiraSprintProgress(Resource):
 
 
 # Model for query parameters (optional, e.g., to filter by team or assignee)
-JiraTasksTodayQueryModel = swagger_ns.model(
-    "JiraTasksTodayQueryModel",
-    {
-        "team": fields.String(required=False, description="Team name, e.g., backend"),
-        "assignee": fields.String(required=False, description="Developer username or email")
-    }
-)
-
 @swagger_ns.route("/jira/tasks/today")
 class JiraTasksToday(Resource):
-    @swagger_ns.expect(JiraTasksTodayQueryModel, validate=False)
+    @swagger_ns.doc(security="BearerAuth")
     def get(self):
         """Fetch Jira tasks for today"""
         team = request.args.get("team")
@@ -567,6 +619,7 @@ CognitoCreateUserModel = swagger_ns.model(
 
 @swagger_ns.route("/cognito/create-user")
 class CognitoCreateUser(Resource):
+    
     @swagger_ns.expect(CognitoCreateUserModel, validate=True)
     def post(self):
         """Create a new Cognito user"""

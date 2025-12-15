@@ -4,6 +4,11 @@ import psycopg2
 
 ALLOWED_ROLES = ["DEV", "QA", "MANAGER", "DEV_MANAGER"]
 
+def rows_to_dicts(cursor, rows):
+    columns = [desc[0] for desc in cursor.description]
+    return [dict(zip(columns, row)) for row in rows]
+
+
 # ==========================================================
 # PostgreSQL Connection
 # ==========================================================
@@ -48,7 +53,14 @@ def lambda_handler(event, context):
 
         # Fetch user record
         cur.execute("SELECT id, email, role, created_at FROM users WHERE email=%s", (user_email,))
-        user_record = cur.fetchone()
+        user_row = cur.fetchone()
+        user_record = {
+            "id": user_row[0],
+            "email": user_row[1],
+            "role": user_row[2],
+            "created_at": user_row[3]
+        } if user_row else None
+
 
         # ================================================================
         # FETCH RECENT COMMITS (last 20)
@@ -71,7 +83,9 @@ def lambda_handler(event, context):
             ORDER BY timestamp DESC 
             LIMIT 20
         """)
-        recent_pull_requests = cur.fetchall()
+        rows = cur.fetchall()
+        recent_pull_requests = rows_to_dicts(cur, rows)
+
 
         cur.close()
         conn.close()
@@ -84,7 +98,7 @@ def lambda_handler(event, context):
                 "user_record": user_record,
                 "recent_commits": recent_commits,
                 "recent_pull_requests": recent_pull_requests
-            }, default=str)
+            }, default=str,indent=2)
         }
 
     except Exception as e:

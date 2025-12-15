@@ -76,16 +76,27 @@ def make_aware(dt):
 def fetch_jira_issues(cursor, team, from_date, to_date):
     cursor.execute(
         """
-        SELECT issue_id, title, status, assignee, created_at, updated_at
+        SELECT id,
+               issue_key,
+               status,
+               priority,
+               component,
+               assignee_name,
+               reporter_name,
+               assignee_email,
+               reporter_email,
+               updated_at,
+               raw
         FROM jira_issues
-        WHERE team = %s
-          AND created_at >= %s
-          AND created_at <= %s
-        ORDER BY created_at DESC;
+        WHERE org_id = %s
+          AND updated_at >= %s
+          AND updated_at <= %s
+        ORDER BY updated_at DESC;
         """,
         (team, from_date, to_date),
     )
     return cursor.fetchall()
+
 
 
 # ==========================================================
@@ -94,16 +105,28 @@ def fetch_jira_issues(cursor, team, from_date, to_date):
 def fetch_github_prs(cursor, team, from_date, to_date):
     cursor.execute(
         """
-        SELECT pr_id, title, state, author, created_at, merged_at
-        FROM github_pull_requests
-        WHERE team = %s
-          AND created_at >= %s
-          AND created_at <= %s
-        ORDER BY created_at DESC;
+        SELECT id,
+               github_id,
+               repo,
+               pr_number,
+               title,
+               action,
+               state,
+               author_login,
+               head_sha,
+               merged,
+               timestamp,
+               raw
+        FROM pull_requests
+        WHERE repo = %s
+          AND timestamp >= %s
+          AND timestamp <= %s
+        ORDER BY timestamp DESC;
         """,
         (team, from_date, to_date),
     )
     return cursor.fetchall()
+
 
 
 # ==========================================================
@@ -150,16 +173,24 @@ def fetch_jira_subtasks(cursor, team, from_date, to_date):
 def fetch_activity_logs(cursor, team, from_date, to_date):
     cursor.execute(
         """
-        SELECT log_id, event_type, description, created_at, user_id
-        FROM activity_logs
-        WHERE team = %s
-          AND created_at >= %s
-          AND created_at <= %s
-        ORDER BY created_at DESC;
+        SELECT id,
+               user_id,
+               org_id,
+               type,
+               source_id,
+               source_ref,
+               payload,
+               occurred_at
+        FROM activity_events
+        WHERE org_id = %s
+          AND occurred_at >= %s
+          AND occurred_at <= %s
+        ORDER BY occurred_at DESC;
         """,
         (team, from_date, to_date),
     )
     return cursor.fetchall()
+
 
 
 # ==========================================================
@@ -200,8 +231,8 @@ def lambda_handler(event, context):
         if report_type in ["subtasks", "full"]:
             response_data["jira_subtasks"] = fetch_jira_subtasks(cursor, team, from_date, to_date)
 
-        if report_type in ["logs", "full"]:
-            response_data["activity_logs"] = fetch_activity_logs(cursor, team, from_date, to_date)
+        # if report_type in ["logs", "full"]:
+        #     response_data["activity_logs"] = fetch_activity_logs(cursor, team, from_date, to_date)
 
         cursor.close()
         conn.close()

@@ -51,7 +51,7 @@ def lambda_handler(event, context):
                 "author": author,
                 "state": state,
                 "idle_days": idle_days,
-                "url": json.loads(raw_json).get("html_url")
+                "url": raw_json.get("html_url")
             })
     
     return {
