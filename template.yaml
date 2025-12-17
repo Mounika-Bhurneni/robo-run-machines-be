@@ -273,6 +273,8 @@ Resources:
           DB_USER: !Ref ParamDBUser
           DB_PASSWORD: !Ref ParamDBPassword
           DB_NAME: !Ref ParamDBName
+          JIRA_USER: !Ref ParamJiraEmail
+          JIRA_API_TOKEN: !Ref ParamJiraApiToken
 
 
   GitHubWebhookFunction:

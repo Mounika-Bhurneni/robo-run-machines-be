@@ -11,6 +11,7 @@ from requests.auth import HTTPBasicAuth
 def get_jira_user_email(account_id):
     url = f"https://praveenreddygopidi.atlassian.net/rest/api/3/user?accountId={account_id}"
     auth = HTTPBasicAuth(os.environ["JIRA_USER"], os.environ["JIRA_API_TOKEN"])
+
     headers = {"Accept": "application/json"}
     response = requests.get(url, headers=headers, auth=auth)
     if response.status_code == 200:
@@ -139,14 +140,14 @@ def handle_issue_created(issue):
         assignee = fields.get("assignee")
         assignee_id = assignee.get("id") or assignee.get("accountId") if assignee else None
         assignee_name = assignee.get("displayName") if assignee else None
-        assignee_email = assignee_id 
+        assignee_email =  get_jira_user_email(assignee_id)
 
 
         # --- Fetch reporter ---
         reporter = fields.get("reporter")
         reporter_id = reporter.get("id") or reporter.get("accountId") if reporter else None
         reporter_name = reporter.get("displayName") if reporter else None
-        reporter_email = reporter_id 
+        reporter_email =  get_jira_user_email(reporter_id)
 
 
         # --- Other fields ---
