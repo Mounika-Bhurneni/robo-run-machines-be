@@ -731,33 +731,7 @@ Resources:
           WEIGHT_STUCK_PR: "1.5"
           WEIGHT_CRITICAL_INCIDENT: "3.0"
 
-  ChatAssistantFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName: !Sub "${AWS::StackName}-chat-assistant"
-      CodeUri: chat_assistant/
-      Handler: app.lambda_handler
-      Runtime: python3.10
-      Timeout: 30
-      MemorySize: 512
-      Layers:
-        - !Ref MyLibLayer
-      Events:
-        ChatAssistantPost:
-          Type: HttpApi
-          Properties:
-            Path: /chat/assistant
-            Method: post
-            ApiId: !Ref HttpApi
-            # Cognito intentionally disabled for local testing
-      Environment:
-        Variables:
-          HF_API_TOKEN: !Ref ParamHFToken
-          HF_MODEL_ID: "mistralai/Mistral-7B-Instruct-v0.2"
-
-          WORKLOAD_API_URL: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/analytics/workload"
-          RISK_API_URL: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/analytics/risk"
-
+  
   CurrentSprintCommitsFunction:
     Type: AWS::Serverless::Function
     Properties:
