@@ -28,10 +28,6 @@ Parameters:
     Type: String
     NoEcho: true
 
-  ParamHFToken:
-    Type: String
-    NoEcho: true
-
 
   # Cognito
   ParamUserPoolId:
