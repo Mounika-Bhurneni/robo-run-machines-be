@@ -95,42 +95,35 @@ def lambda_handler(event, context):
                     json.dumps(payload)
                 ))
 
+
             if github_event == "push":
-                print("push======>",payload)
+                print("push===>")
                 for c in payload.get("commits", []):
                     commit_id = str(uuid.uuid4())
                     commit_sha = c["id"]
                     author_email = c["author"]["email"]
-                    github_id = c["author"].get("id")  # numeric GitHub ID (BIGINT)
+                    author_user_id = c["author"].get("id")
                     message = c["message"]
                     files = c.get("modified", []) + c.get("added", []) + c.get("removed", [])
                     timestamp = datetime.utcnow()
 
                     sql = """
-                        INSERT INTO github_events
-                        (id, github_id, repo, commit_sha, author_email, message, files, timestamp, raw)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (github_id, repo) DO UPDATE
-                        SET commit_sha = EXCLUDED.commit_sha,
-                            author_email = EXCLUDED.author_email,
-                            message = EXCLUDED.message,
-                            files = EXCLUDED.files,
-                            timestamp = EXCLUDED.timestamp,
-                            raw = EXCLUDED.raw
+                        INSERT INTO git_commits
+                        (id, repo, commit_sha, author_email, author_user_id, message, files, timestamp)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (commit_sha, repo) DO NOTHING
                     """
                     cur.execute(sql, (
                         commit_id,
-                        github_id,
                         repo,
                         commit_sha,
                         author_email,
+                        author_user_id,
                         message,
-                        json.dumps(files),
-                        timestamp,
-                        json.dumps(c)
+                        files,
+                        timestamp
                     ))
 
-                print("Push commits upserted successfully.")
 
             elif github_event == "pull_request":
                 pr = payload["pull_request"]
@@ -225,6 +218,7 @@ def lambda_handler(event, context):
 
 
             elif github_event == "issue_comment":
+                print("issue_comment===>")
                 comment = payload["comment"]
                 github_id = comment["id"]
                 issue_number = payload["issue"]["number"]
