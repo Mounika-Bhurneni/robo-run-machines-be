@@ -28,6 +28,11 @@ Parameters:
     Type: String
     NoEcho: true
 
+  ParamHFToken:
+    Type: String
+    NoEcho: true
+
+
   # Cognito
   ParamUserPoolId:
     Type: String
@@ -570,8 +575,8 @@ Resources:
 
 
   PRBottleneckFunction:
-      Type: AWS::Serverless::Function
-      Properties:
+    Type: AWS::Serverless::Function
+    Properties:
         FunctionName: !Sub "${AWS::StackName}-pr-bottleneck"
         CodeUri: pr_bottleneck/
         Handler: app.lambda_handler
@@ -726,8 +731,65 @@ Resources:
           WEIGHT_STUCK_PR: "1.5"
           WEIGHT_CRITICAL_INCIDENT: "3.0"
 
+  ChatAssistantFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-chat-assistant"
+      CodeUri: chat_assistant/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 512
+      Layers:
+        - !Ref MyLibLayer
+      Events:
+        ChatAssistantPost:
+          Type: HttpApi
+          Properties:
+            Path: /chat/assistant
+            Method: post
+            ApiId: !Ref HttpApi
+            # Cognito intentionally disabled for local testing
+      Environment:
+        Variables:
+          HF_API_TOKEN: !Ref ParamHFToken
+          HF_MODEL_ID: "mistralai/Mistral-7B-Instruct-v0.2"
+
+          WORKLOAD_API_URL: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/analytics/workload"
+          RISK_API_URL: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/analytics/risk"
+
+  CurrentSprintCommitsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-current-sprint-commits"
+      CodeUri: current_sprint_commits/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 512
+      Layers:
+        - !Ref MyLibLayer
+      Events:
+        CurrentSprintCommitsGet:
+          Type: HttpApi
+          Properties:
+            Path: /jira/sprint/commits
+            Method: get
+            ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: CognitoJwt
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+          DB_PORT: !Ref ParamDBPort
 
 
+
+
+  
 Outputs:
   HttpApiUrl:
     Description: "Base URL for the HTTP API"
