@@ -20,6 +20,11 @@ Parameters:
   ParamComposioKey:
     Type: String
     NoEcho: true
+    
+  ParamOpenAIKey:
+    Type: String
+    NoEcho: true
+
   ParamJiraInstanceUrl:
     Type: String
   ParamJiraEmail:
