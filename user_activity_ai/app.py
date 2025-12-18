@@ -29,29 +29,36 @@ def lambda_handler(event, context):
 
         # Try to detect email in the question
         email_match = re.search(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+", question)
+        
+        conn = get_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
         if email_match:
-            like_pattern = f"%{email_match.group(0).lower()}%"
+            # Match by email
+            cur.execute("""
+                SELECT id, email, display_name
+                FROM users
+                WHERE LOWER(email) = %s
+                LIMIT 1
+            """, (email_match.group(0).lower(),))
         else:
-            # Extract all alphabetic words
+            # Extract alphabetic words
             words = re.findall(r"[a-zA-Z]{2,}", question)
             if not words:
                 return {"statusCode": 400, "body": json.dumps({"error": "No valid user identifier found in question"})}
 
-            # Build flexible pattern: %word1%word2%...
-            like_pattern = "%" + "%".join([w.lower() for w in words]) + "%"
+            # Build SQL: match any word in display_name or email
+            sql_conditions = " OR ".join(["LOWER(display_name) ILIKE %s" for _ in words] +
+                                          ["LOWER(email) ILIKE %s" for _ in words])
+            sql_params = [f"%{w.lower()}%" for w in words] * 2
 
-        conn = get_connection()
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-        # Query user table using flexible pattern
-        cur.execute("""
-            SELECT id, email, display_name
-            FROM users
-            WHERE LOWER(display_name) ILIKE %s OR LOWER(email) ILIKE %s
-            LIMIT 1
-        """, (like_pattern, like_pattern))
-
-        print("like_pattern==>",like_pattern)
+            query = f"""
+                SELECT id, email, display_name
+                FROM users
+                WHERE {sql_conditions}
+                LIMIT 1
+            """
+            cur.execute(query, sql_params)
 
         user = cur.fetchone()
         if not user:
@@ -74,11 +81,13 @@ def lambda_handler(event, context):
         cur.execute("""
             SELECT issue_key, status, priority, updated_at
             FROM jira_issues
-            WHERE assignee_user_id = %s
+            WHERE LOWER(assignee_email) = %s
             ORDER BY updated_at DESC
             LIMIT 20
-        """, (str(user_id),))
+        """, (user['email'].lower(),))
         issues = cur.fetchall()
+        print("email==>",user['email'])
+        print("issues==>",issues)
 
         # Fetch Jira subtasks
         cur.execute("""
@@ -95,24 +104,24 @@ def lambda_handler(event, context):
 
         # Build prompt for OpenAI
         prompt = f"""
-You are an engineering manager assistant.
+            You are an engineering manager assistant.
 
-User: {user['display_name']} ({user['email']})
+            User: {user['display_name']} ({user['email']})
 
-Git commits (last 7 days):
-{json.dumps(commits, indent=2, default=str)}
+            Git commits (last 7 days):
+            {json.dumps(commits, indent=2, default=str)}
 
-Jira issues:
-{json.dumps(issues, indent=2, default=str)}
+            Jira issues:
+            {json.dumps(issues, indent=2, default=str)}
 
-Jira subtasks:
-{json.dumps(subtasks, indent=2, default=str)}
+            Jira subtasks:
+            {json.dumps(subtasks, indent=2, default=str)}
 
-Question:
-{question}
+            Question:
+            {question}
 
-Answer in clear, concise bullet points.
-"""
+            Answer in clear, concise bullet points.
+            """
 
         response = client.chat.completions.create(
             model="gpt-4o-mini",
