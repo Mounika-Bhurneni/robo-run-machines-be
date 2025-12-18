@@ -53,6 +53,18 @@ def error(status, message):
     }
 
 # ==========================
+# Helper to map results to Mon-Sun
+# ==========================
+def map_to_weekdays(results, value_key):
+    weekday_map = {0:'Mon',1:'Tue',2:'Wed',3:'Thu',4:'Fri',5:'Sat',6:'Sun'}
+    daily_counts = {name:0 for name in weekday_map.values()}
+    for r in results:
+        day = make_aware(r['day'])
+        weekday_name = weekday_map[day.weekday()]
+        daily_counts[weekday_name] = r[value_key]
+    return daily_counts
+
+# ==========================
 # Fetch daily commits
 # ==========================
 def fetch_daily_commits(cursor, from_date, to_date):
@@ -65,18 +77,8 @@ def fetch_daily_commits(cursor, from_date, to_date):
         GROUP BY day
         ORDER BY day ASC;
     """, (from_date, to_date))
-
     results = cursor.fetchall()
-    # Map to weekdays Mon-Sun
-    weekday_map = {0:'Mon',1:'Tue',2:'Wed',3:'Thu',4:'Fri',5:'Sat',6:'Sun'}
-    daily_counts = {name:0 for name in weekday_map.values()}
-
-    for r in results:
-        day = make_aware(r['day'])
-        weekday_name = weekday_map[day.weekday()]
-        daily_counts[weekday_name] = r['total_commits']
-
-    return daily_counts
+    return map_to_weekdays(results, 'total_commits')
 
 # ==========================
 # Fetch daily PRs
@@ -91,17 +93,8 @@ def fetch_daily_prs(cursor, from_date, to_date):
         GROUP BY day
         ORDER BY day ASC;
     """, (from_date, to_date))
-
     results = cursor.fetchall()
-    weekday_map = {0:'Mon',1:'Tue',2:'Wed',3:'Thu',4:'Fri',5:'Sat',6:'Sun'}
-    daily_counts = {name:0 for name in weekday_map.values()}
-
-    for r in results:
-        day = make_aware(r['day'])
-        weekday_name = weekday_map[day.weekday()]
-        daily_counts[weekday_name] = r['total_prs']
-
-    return daily_counts
+    return map_to_weekdays(results, 'total_prs')
 
 # ==========================
 # Lambda handler
@@ -127,7 +120,6 @@ def lambda_handler(event, context):
         cursor.close()
         conn.close()
 
-        # Return in graph-friendly format
         return success("Weekly Commit & PR Analytics fetched successfully", {
             "commits": commits_by_day,
             "pull_requests": prs_by_day
