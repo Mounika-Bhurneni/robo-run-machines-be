@@ -7,7 +7,6 @@ import psycopg2
 cognito = boto3.client("cognito-idp")
 USER_POOL_ID = os.environ["USER_POOL_ID"]
 
-ALLOWED_ROLES = ["DEV", "QA", "MANAGER", "DEV_MANAGER"]
 ADMIN_ROLES = ["MANAGER", "DEV_MANAGER"]
 
 # ==========================================================
@@ -58,20 +57,20 @@ def lambda_handler(event, context):
         body = json.loads(event.get("body", "{}"))
 
         email = body.get("email")
-        role = body.get("role")
         org_id = body.get("org_id")
         skills = body.get("skills", [])
+
+        # ❌ Role update not allowed
+        if "role" in body:
+            return {
+                "statusCode": 400,
+                "body": json.dumps({"error": "Role update is not allowed"})
+            }
 
         if not email:
             return {
                 "statusCode": 400,
                 "body": json.dumps({"error": "email is required"})
-            }
-
-        if role and role not in ALLOWED_ROLES:
-            return {
-                "statusCode": 400,
-                "body": json.dumps({"error": f"Invalid role: {role}"})
             }
 
         conn = get_connection()
@@ -102,59 +101,23 @@ def lambda_handler(event, context):
                     "body": json.dumps({"error": "Invalid organization"})
                 }
 
-        # ------------------------------
-        # Update User Table
-        # ------------------------------
-        cur.execute("""
-            UPDATE users
-            SET
-                org_id = COALESCE(%s, org_id),
-                role = COALESCE(%s, role)
-            WHERE id = %s
-        """, (org_id, role, user_id))
-
-        # ------------------------------
-        # Update Cognito Role (if changed)
-        # ------------------------------
-        if role:
-            cognito.admin_update_user_attributes(
-                UserPoolId=USER_POOL_ID,
-                Username=email,
-                UserAttributes=[
-                    {"Name": "custom:role", "Value": role}
-                ]
-            )
-
-            # Remove from all role groups
-            for r in ALLOWED_ROLES:
-                try:
-                    cognito.admin_remove_user_from_group(
-                        UserPoolId=USER_POOL_ID,
-                        Username=email,
-                        GroupName=r
-                    )
-                except Exception:
-                    pass
-
-            # Add to new role group
-            cognito.admin_add_user_to_group(
-                UserPoolId=USER_POOL_ID,
-                Username=email,
-                GroupName=role
-            )
+            # Update org only
+            cur.execute("""
+                UPDATE users
+                SET org_id = %s
+                WHERE id = %s
+            """, (org_id, user_id))
 
         # ------------------------------
         # Update Skills (Replace)
         # ------------------------------
         if skills:
-            # Delete existing skills
             cur.execute("DELETE FROM user_skills WHERE user_id = %s", (user_id,))
 
             for skill in skills:
                 name = skill.get("name")
                 proficiency = skill.get("proficiency", 3)
 
-                # Upsert skill
                 cur.execute("""
                     INSERT INTO skills (name)
                     VALUES (%s)
@@ -181,7 +144,7 @@ def lambda_handler(event, context):
         return {
             "statusCode": 200,
             "body": json.dumps({
-                "message": "User updated successfully",
+                "message": "User updated successfully (role unchanged)",
                 "user_id": str(user_id)
             }, cls=DateTimeEncoder)
         }

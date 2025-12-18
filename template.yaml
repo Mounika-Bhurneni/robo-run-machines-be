@@ -792,6 +792,37 @@ Resources:
           ADMIN_ROLES: "MANAGER,DEV_MANAGER"
 
 
+
+  FetchUserFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-fetch-user"
+      CodeUri: fetch_user/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 512
+      Layers: [!Ref MyLibLayer]
+      Events:
+        FetchUserGet:
+          Type: HttpApi
+          Properties:
+            Path: /users/details
+            Method: get
+            ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: CognitoJwt   # MANAGER / DEV_MANAGER only
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+          DB_PORT: !Ref ParamDBPort
+
+          USER_POOL_ID: !Ref ParamUserPoolId
+
+
 Outputs:
   HttpApiUrl:
     Description: "Base URL for the HTTP API"
