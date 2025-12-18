@@ -4,12 +4,11 @@ import psycopg2
 import psycopg2.extras
 from datetime import datetime, timedelta
 from openai import OpenAI
+import re
 
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
-# ==========================================================
-# PostgreSQL Connection
-# ==========================================================
+# PostgreSQL connection
 def get_connection():
     return psycopg2.connect(
         host=os.environ["DB_HOST"],
@@ -19,62 +18,59 @@ def get_connection():
         port=5432
     )
 
-# ==========================================================
-# Lambda Handler
-# ==========================================================
+# Lambda handler
 def lambda_handler(event, context):
     try:
         body = json.loads(event.get("body", "{}"))
-        question = body.get("question")
+        question = body.get("question", "")
 
         if not question:
-            return {
-                "statusCode": 400,
-                "body": json.dumps({"error": "question is required"})
-            }
+            return {"statusCode": 400, "body": json.dumps({"error": "question is required"})}
+
+        # Try to detect email in the question
+        email_match = re.search(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+", question)
+        if email_match:
+            like_pattern = f"%{email_match.group(0).lower()}%"
+        else:
+            # Extract all alphabetic words
+            words = re.findall(r"[a-zA-Z]{2,}", question)
+            if not words:
+                return {"statusCode": 400, "body": json.dumps({"error": "No valid user identifier found in question"})}
+
+            # Build flexible pattern: %word1%word2%...
+            like_pattern = "%" + "%".join([w.lower() for w in words]) + "%"
 
         conn = get_connection()
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-        # --------------------------------------------------
-        # 1️⃣ Resolve User (name/email fuzzy match)
-        # --------------------------------------------------
+        # Query user table using flexible pattern
         cur.execute("""
             SELECT id, email, display_name
             FROM users
-            WHERE
-                LOWER(display_name) LIKE %s
-                OR LOWER(email) LIKE %s
+            WHERE LOWER(display_name) ILIKE %s OR LOWER(email) ILIKE %s
             LIMIT 1
-        """, (f"%{question.lower()}%", f"%{question.lower()}%"))
+        """, (like_pattern, like_pattern))
+
+        print("like_pattern==>",like_pattern)
 
         user = cur.fetchone()
         if not user:
-            return {
-                "statusCode": 404,
-                "body": json.dumps({"error": "User not found"})
-            }
+            return {"statusCode": 404, "body": json.dumps({"error": "User not found"})}
 
         user_id = user["id"]
-
         since = datetime.utcnow() - timedelta(days=7)
 
-        # --------------------------------------------------
-        # 2️⃣ Git Commits
-        # --------------------------------------------------
+        # Fetch Git commits
         cur.execute("""
             SELECT repo, commit_sha, message, files, timestamp
             FROM git_commits
-            WHERE author_user_id = %s
-              AND timestamp >= %s
+            WHERE author_user_id = %s AND timestamp >= %s
             ORDER BY timestamp DESC
             LIMIT 20
         """, (user_id, since))
         commits = cur.fetchall()
 
-        # --------------------------------------------------
-        # 3️⃣ Jira Issues
-        # --------------------------------------------------
+        # Fetch Jira issues
         cur.execute("""
             SELECT issue_key, status, priority, updated_at
             FROM jira_issues
@@ -84,43 +80,39 @@ def lambda_handler(event, context):
         """, (str(user_id),))
         issues = cur.fetchall()
 
-        # --------------------------------------------------
-        # 4️⃣ Jira Subtasks
-        # --------------------------------------------------
+        # Fetch Jira subtasks
         cur.execute("""
             SELECT summary, status, timestamp
             FROM jira_subtasks
-            WHERE author_login = %s
+            WHERE author_login ILIKE %s
             ORDER BY timestamp DESC
             LIMIT 20
-        """, (user["email"],))
+        """, (f"%{user['email']}%",))
         subtasks = cur.fetchall()
 
         cur.close()
         conn.close()
 
-        # --------------------------------------------------
-        # 5️⃣ Send to OpenAI
-        # --------------------------------------------------
+        # Build prompt for OpenAI
         prompt = f"""
-            You are an engineering manager assistant.
+You are an engineering manager assistant.
 
-            User: {user['display_name']} ({user['email']})
+User: {user['display_name']} ({user['email']})
 
-            Git commits (last 7 days):
-            {json.dumps(commits, indent=2, default=str)}
+Git commits (last 7 days):
+{json.dumps(commits, indent=2, default=str)}
 
-            Jira issues:
-            {json.dumps(issues, indent=2, default=str)}
+Jira issues:
+{json.dumps(issues, indent=2, default=str)}
 
-            Jira subtasks:
-            {json.dumps(subtasks, indent=2, default=str)}
+Jira subtasks:
+{json.dumps(subtasks, indent=2, default=str)}
 
-            Question:
-            {question}
+Question:
+{question}
 
-            Answer in clear, concise bullet points.
-            """
+Answer in clear, concise bullet points.
+"""
 
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -133,17 +125,8 @@ def lambda_handler(event, context):
 
         answer = response.choices[0].message.content
 
-        return {
-            "statusCode": 200,
-            "body": json.dumps({
-                "user": user,
-                "answer": answer
-            })
-        }
+        return {"statusCode": 200, "body": json.dumps({"user": user, "answer": answer})}
 
     except Exception as e:
         print("ERROR:", str(e))
-        return {
-            "statusCode": 500,
-            "body": json.dumps({"error": str(e)})
-        }
+        return {"statusCode": 500, "body": json.dumps({"error": str(e)})}
