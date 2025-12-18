@@ -2,6 +2,7 @@ import os
 import json
 import psycopg2
 from datetime import datetime, timedelta
+from dateutil import parser
 
 ALLOWED_ROLES = ["DEV", "QA", "MANAGER", "DEV_MANAGER"]
 
@@ -24,63 +25,64 @@ def lambda_handler(event, context):
             return {"statusCode": 403, "body": json.dumps({"error": "Unauthorized role"})}
 
         # ------------------------------------------------------------
-        # Time Window: Last 7 days
+        # Read query parameters
         # ------------------------------------------------------------
-        now = datetime.utcnow()
-        start_date = now - timedelta(days=7)
+        params = event.get("queryStringParameters") or {}
+        from_date_str = params.get("from_date")
+        to_date_str = params.get("to_date")
+
+        if not from_date_str or not to_date_str:
+            return {"statusCode": 400, "body": json.dumps({"error": "from_date and to_date are required"})}
+
+        # Parse dates
+        from_date = parser.isoparse(from_date_str)
+        to_date = parser.isoparse(to_date_str)
 
         conn = get_connection()
         cur = conn.cursor()
 
         # ------------------------------------------------------------
-        # Commits Analytics
+        # Daily Commits
         # ------------------------------------------------------------
-        commit_query = """
-            SELECT 
-                author_email,
-                repo,
-                COUNT(*) AS commit_count
+        cur.execute("""
+            SELECT DATE_TRUNC('day', timestamp) AS day, COUNT(*) AS commit_count
             FROM github_events
-            WHERE timestamp >= %s AND timestamp <= %s
-              AND commit_sha IS NOT NULL
-            GROUP BY author_email, repo
-            ORDER BY commit_count DESC;
-        """
-        cur.execute(commit_query, (start_date, now))
+            WHERE timestamp BETWEEN %s AND %s AND commit_sha IS NOT NULL
+            GROUP BY day
+            ORDER BY day ASC;
+        """, (from_date, to_date))
+
         commit_rows = cur.fetchall()
-        commits = [
-            {"author_email": r[0], "repo": r[1], "commit_count": r[2]}
-            for r in commit_rows
-        ]
+        # Map dates to ISO string
+        commits_by_day = {r[0].date().isoformat(): r[1] for r in commit_rows}
+
+        # Fill missing dates with 0
+        day_cursor = from_date.date()
+        daily_commits = {}
+        while day_cursor <= to_date.date():
+            daily_commits[str(day_cursor)] = commits_by_day.get(day_cursor.isoformat(), 0)
+            day_cursor += timedelta(days=1)
 
         # ------------------------------------------------------------
-        # Pull Requests Analytics (from pull_requests table)
+        # Daily PRs
         # ------------------------------------------------------------
-        pr_query = """
-            SELECT 
-                author_login,
-                repo,
-                COUNT(*) FILTER (WHERE state='open') AS open_prs,
-                COUNT(*) FILTER (WHERE state='closed') AS closed_prs,
-                COUNT(*) FILTER (WHERE merged=true) AS merged_prs
+        cur.execute("""
+            SELECT DATE_TRUNC('day', timestamp) AS day, COUNT(*) AS pr_count
             FROM pull_requests
-            WHERE timestamp >= %s AND timestamp <= %s
-            GROUP BY author_login, repo
-            ORDER BY merged_prs DESC;
-        """
-        cur.execute(pr_query, (start_date, now))
-        pr_rows = cur.fetchall()
+            WHERE timestamp BETWEEN %s AND %s
+            GROUP BY day
+            ORDER BY day ASC;
+        """, (from_date, to_date))
 
-        pull_requests = [
-            {
-                "author_email": r[0],   # using author_login as "email" for display
-                "repo": r[1],
-                "open_prs": r[2] or 0,
-                "closed_prs": r[3] or 0,
-                "merged_prs": r[4] or 0
-            }
-            for r in pr_rows
-        ]
+        pr_rows = cur.fetchall()
+        prs_by_day = {r[0].date().isoformat(): r[1] for r in pr_rows}
+
+        # Fill missing dates with 0
+        day_cursor = from_date.date()
+        daily_prs = {}
+        while day_cursor <= to_date.date():
+            daily_prs[str(day_cursor)] = prs_by_day.get(day_cursor.isoformat(), 0)
+            day_cursor += timedelta(days=1)
 
         cur.close()
         conn.close()
@@ -91,10 +93,10 @@ def lambda_handler(event, context):
         return {
             "statusCode": 200,
             "body": json.dumps({
-                "range": {"from": start_date.isoformat(), "to": now.isoformat()},
-                "commits": commits,
-                "pull_requests": pull_requests
-            },indent=2)
+                "range": {"from": from_date.isoformat(), "to": to_date.isoformat()},
+                "commits": daily_commits,
+                "pull_requests": daily_prs
+            }, indent=2)
         }
 
     except Exception as e:
