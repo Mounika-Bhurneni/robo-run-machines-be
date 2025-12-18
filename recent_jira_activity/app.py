@@ -3,27 +3,17 @@ import json
 import psycopg2
 from datetime import datetime, timezone
 
-ALLOWED_ROLES = ["DEV", "QA", "MANAGER", "DEV_MANAGER"]
-
-# ==========================================================
-# PostgreSQL Connection
-# ==========================================================
-def get_connection():
-    return psycopg2.connect(
-        host=os.environ["DB_HOST"],
-        user=os.environ["DB_USER"],
-        password=os.environ["DB_PASSWORD"],
-        dbname=os.environ["DB_NAME"],
-        port=5432
-    )
-
-# ==========================================================
-# Time Ago Helper
-# ==========================================================
-from datetime import datetime, timezone
 
 def time_ago(ts):
-    # Make DB timestamp timezone-aware (UTC)
+    if not ts:
+        return None
+
+    if isinstance(ts, str):
+        try:
+            ts = datetime.fromisoformat(ts)
+        except ValueError:
+            return None  # 👈 prevents crashes
+
     if ts.tzinfo is None:
         ts = ts.replace(tzinfo=timezone.utc)
 
@@ -44,6 +34,20 @@ def time_ago(ts):
     else:
         return f"{days} d ago"
 
+
+ALLOWED_ROLES = ["DEV", "QA", "MANAGER", "DEV_MANAGER"]
+
+# ==========================================================
+# PostgreSQL Connection
+# ==========================================================
+def get_connection():
+    return psycopg2.connect(
+        host=os.environ["DB_HOST"],
+        user=os.environ["DB_USER"],
+        password=os.environ["DB_PASSWORD"],
+        dbname=os.environ["DB_NAME"],
+        port=5432
+    )
 
 # ==========================================================
 # Lambda Handler
@@ -73,30 +77,77 @@ def lambda_handler(event, context):
         # ================================================================
         cur.execute("""
             SELECT
-                issue_key,
-                assignee_name,
-                updated_at,
-                status,
-                priority,
-                LEFT(raw->'fields'->>'summary', 120) AS summary
-            FROM jira_issues
-            ORDER BY updated_at DESC
-            LIMIT 20
+                type,
+                title,
+                description,
+                author,
+                project_name,
+                timestamp
+            FROM (
+                SELECT
+                    'ISSUE' AS type,
+                    issue_key AS title,
+                    LEFT(raw->'fields'->>'summary', 120) AS description,
+                    assignee_name AS author,
+                    raw->'fields'->'project'->>'name' AS project_name,
+                    updated_at::timestamptz AS timestamp
+                FROM jira_issues
+
+                UNION ALL
+
+                SELECT
+                    'SPRINT',
+                    name,
+                    state,
+                    author_login,
+                    raw->'project'->>'name',
+                    timestamp::timestamptz
+                FROM jira_sprints
+
+                UNION ALL
+
+                SELECT
+                    'SUBTASK',
+                    summary,
+                    status,
+                    author_login,
+                    raw->'fields'->'project'->>'name',
+                    timestamp::timestamptz
+                FROM jira_subtasks
+
+                UNION ALL
+
+                SELECT
+                    'COMMENT',
+                    CONCAT('Comment on Issue ', issue_id),
+                    LEFT(comment_body, 120),
+                    author_login,
+                    raw->'fields'->'project'->>'name',
+                    timestamp::timestamptz
+                FROM jira_issue_comments
+            ) activities
+            ORDER BY timestamp DESC
+            LIMIT 30;
+
+
         """)
 
+       
         rows = cur.fetchall()
-
-        jira_tickets = []
+        activities = []
         for row in rows:
-            jira_tickets.append({
-                "jira_ticket_id": row[0],
-                "assignee_name": row[1],
-                "timestamp": row[2],
-                "time_ago": time_ago(row[2]),
-                "status": row[3],
-                "priority": row[4],
-                "summary": row[5]
+            ts = row[5]   # 👈 THIS is the timestamp column
+
+            activities.append({
+                "type": row[0],
+                "title": row[1],
+                "description": row[2],
+                "author": row[3],
+                "project_name": row[4],
+                "timestamp": ts,
+                "time_ago": time_ago(ts) if ts else None
             })
+
 
         cur.close()
         conn.close()
@@ -104,7 +155,7 @@ def lambda_handler(event, context):
         return {
             "statusCode": 200,
             "body": json.dumps(
-                {"jira_recent_tickets": jira_tickets},
+                {"jira_recent_activities": activities},
                 default=str,
                 indent=2
             )

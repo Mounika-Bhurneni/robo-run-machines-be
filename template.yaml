@@ -758,6 +758,40 @@ Resources:
 
 
 
+  UpdateUserFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-update-user"
+      CodeUri: update_user/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 512
+      Layers: [!Ref MyLibLayer]
+      Events:
+        UpdateUserPut:
+          Type: HttpApi
+          Properties:
+            Path: /users/update
+            Method: put
+            ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: CognitoJwt   # MANAGER / DEV_MANAGER only
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+          DB_PORT: !Ref ParamDBPort
+
+          USER_POOL_ID: !Ref ParamUserPoolId
+
+          # ---- User Configuration ----
+          ALLOWED_ROLES: "DEV,QA,MANAGER,DEV_MANAGER"
+          ADMIN_ROLES: "MANAGER,DEV_MANAGER"
+
+
 Outputs:
   HttpApiUrl:
     Description: "Base URL for the HTTP API"
