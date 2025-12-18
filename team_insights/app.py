@@ -9,8 +9,13 @@ from datetime import datetime, timedelta
 # ==========================================================
 def percent_change(current, previous):
     if previous == 0:
-        return 100 if current > 0 else 0
-    return round(((current - previous) / previous) * 100, 2)
+        value = 100 if current > 0 else 0
+    else:
+        value = round(((current - previous) / previous) * 100, 2)
+
+    # format with sign
+    return f"{value:+.2f}%"
+
 
 
 # ==========================================================
@@ -48,7 +53,7 @@ def lambda_handler(event, context):
 
         return {
             "statusCode": 200,
-            "body": json.dumps(insights)
+            "body": json.dumps(insights,indent=2)
         }
 
     except Exception as e:
@@ -263,7 +268,7 @@ def get_team_insights(org_id=None, user_id=None):
         },
         "high_priority_inactive": {
             "count": curr_high_inactive,
-            "delta_percent": -abs(percent_change(prev_high_inactive, curr_high_inactive)),
+            "delta_percent": f"-{abs(float(percent_change(curr_high_inactive, prev_high_inactive).replace('%',''))):.2f}%",
             "comparison": "improvement"
         },
     }
