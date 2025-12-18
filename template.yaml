@@ -858,6 +858,33 @@ Resources:
           OPENAI_API_KEY: !Ref ParamOpenAIKey
 
 
+  WeeklyCommitPRAnalyticsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-weekly-commit-pr-analytics"
+      CodeUri: weekly_commit_pr_analytics/
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.11
+      Timeout: 30
+      MemorySize: 512
+      Events:
+        WeeklyAnalyticsGet:
+          Type: HttpApi
+          Properties:
+            Path: /weekly-analytics
+            Method: get
+            ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: CognitoJwt   # Optional: for secured access
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+          DB_PORT: !Ref ParamDBPort
+
+
 Outputs:
   HttpApiUrl:
     Description: "Base URL for the HTTP API"
