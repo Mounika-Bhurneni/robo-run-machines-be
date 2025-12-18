@@ -823,6 +823,36 @@ Resources:
           USER_POOL_ID: !Ref ParamUserPoolId
 
 
+  UserActivityAIFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-user-activity-ai"
+      CodeUri: user_activity_ai/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 60
+      MemorySize: 1024
+      Layers: [!Ref MyLibLayer]
+      Events:
+        UserActivityPost:
+          Type: HttpApi
+          Properties:
+            Path: /ai/user-activity
+            Method: post
+            ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: CognitoJwt   # MANAGER / DEV_MANAGER
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+          DB_PORT: !Ref ParamDBPort
+
+          OPENAI_API_KEY: !Ref ParamOpenAIKey
+
+
 Outputs:
   HttpApiUrl:
     Description: "Base URL for the HTTP API"
