@@ -8,6 +8,33 @@ import uuid
 import requests
 from requests.auth import HTTPBasicAuth
 
+
+def extract_author_email(body, issue=None, comment=None, worklog=None):
+    account_id = None
+
+    # 1️⃣ Comment author
+    if comment and comment.get("author"):
+        account_id = comment["author"].get("accountId")
+
+    # 2️⃣ Worklog author
+    elif worklog and worklog.get("author"):
+        account_id = worklog["author"].get("accountId")
+
+    # 3️⃣ Generic webhook user
+    elif body.get("user"):
+        account_id = body["user"].get("accountId")
+
+    # 4️⃣ Fallback: reporter
+    elif issue and issue.get("fields", {}).get("reporter"):
+        account_id = issue["fields"]["reporter"].get("accountId")
+
+    if not account_id:
+        return None
+
+    return get_jira_user_email(account_id)
+
+
+
 def get_jira_user_email(account_id):
     url = f"https://praveenreddygopidi.atlassian.net/rest/api/3/user?accountId={account_id}"
     auth = HTTPBasicAuth(os.environ["JIRA_USER"], os.environ["JIRA_API_TOKEN"])
@@ -63,11 +90,15 @@ def lambda_handler(event, context):
 
         # ---- SPRINT EVENTS ---- #
         elif webhook_event in ["sprint_created", "sprint_updated", "sprint_deleted", "sprint_started", "sprint_closed"]:
-            handle_sprint_events(webhook_event, sprint)
+            author_login = extract_author_email(body)
+            handle_sprint_events(webhook_event, sprint, author_login=author_login)
+            
 
         # ---- COMMENT EVENTS ---- #
         elif webhook_event in ["comment_created", "comment_updated", "comment_deleted"]:
-            handle_comment_events(webhook_event, issue, comment)
+            author_login = extract_author_email(body, issue=issue, comment=comment)
+            handle_comment_events(webhook_event, issue, comment, author_login=author_login)
+            
 
         # ---- VOTING/WATCHING ---- #
         elif webhook_event in ["issue_vote_changed", "issue_watch_changed"]:
@@ -84,6 +115,7 @@ def lambda_handler(event, context):
             board_id = body.get("issue", {}).get("originBoardId")  # optional
             issue_data = body.get("issue")
             author_login = body.get("user", {}).get("displayName")
+            author_login = extract_author_email(body, issue=issue_data)
             handle_subtask_events(webhook_event, issue_data, board_id=board_id, author_login=author_login)
 
 

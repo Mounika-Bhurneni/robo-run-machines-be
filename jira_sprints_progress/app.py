@@ -133,7 +133,7 @@ def lambda_handler(event, context):
             "body": json.dumps({
                 "count": len(sprint_list),
                 "sprints": sprint_list
-            }, default=str)
+            }, default=str,indent=2)
         }
 
     except Exception as e:

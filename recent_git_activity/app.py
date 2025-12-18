@@ -71,7 +71,9 @@ def lambda_handler(event, context):
             ORDER BY timestamp DESC 
             LIMIT 20
         """)
-        recent_commits = cur.fetchall()
+        rows = cur.fetchall()
+        recent_commits = rows_to_dicts(cur, rows)
+
 
         # ================================================================
         # FETCH RECENT PULL REQUESTS (last 20)
