@@ -863,7 +863,7 @@ Resources:
     Properties:
       FunctionName: !Sub "${AWS::StackName}-weekly-commit-pr-analytics"
       CodeUri: weekly_commit_pr_analytics/
-      Handler: lambda_function.lambda_handler
+      Handler: app.lambda_handler
       Runtime: python3.11
       Timeout: 30
       MemorySize: 512
