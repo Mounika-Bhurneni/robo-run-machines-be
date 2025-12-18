@@ -9,3 +9,4 @@ awsgi
 jwt
 requests
 psycopg2-binary
+openai
