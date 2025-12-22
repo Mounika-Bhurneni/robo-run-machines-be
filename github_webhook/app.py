@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime
 import psycopg2
 import psycopg2.extras
+import boto3
 
 # ==========================================================
 # 1. PostgreSQL Connection.     
@@ -25,6 +26,39 @@ def get_connection():
         print("DB Connection Error:", str(e))
         raise
 
+
+def send_ws_message(connection_id, data):
+    """
+    Send JSON message to a specific WebSocket connection via API Gateway
+    """
+    ws_client = boto3.client("apigatewaymanagementapi",
+                             endpoint_url="https://7mbg70wjz8.execute-api.us-east-1.amazonaws.com/prod/")  # e.g., https://<id>.execute-api.us-east-1.amazonaws.com/prod
+    try:
+        ws_client.post_to_connection(
+            ConnectionId=connection_id,
+            Data=json.dumps(data).encode("utf-8")
+        )
+        print(f"Sent message to connection {connection_id}")
+    except ws_client.exceptions.GoneException:
+        print(f"Connection {connection_id} no longer exists")
+    except Exception as e:
+        print(f"Error sending WS message: {str(e)}")
+
+def broadcast_to_all(payload):
+    """
+    Fetch all connection IDs and send the payload to each.
+    """
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT connection_id FROM websocket_connections")
+        rows = cur.fetchall()
+        for (connection_id,) in rows:
+            send_ws_message(connection_id, payload)
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"Error broadcasting WS event: {str(e)}")
 # ==========================================================
 # 2. GitHub Signature Validation
 # ==========================================================
@@ -124,6 +158,19 @@ def lambda_handler(event, context):
                         timestamp
                     ))
 
+                # 🔔 Broadcast commit event to all websocket connections
+                payload_ws = {
+                    "event": "github:push",
+                    "repo": repo,
+                    "commit_sha": commit_sha,
+                    "message": message,
+                    "author_email": author_email,
+                    "files": files,
+                    "timestamp": timestamp.isoformat(),
+                    "raw": c
+                }
+
+                broadcast_to_all(payload_ws)
 
             elif github_event == "pull_request":
                 pr = payload["pull_request"]
@@ -170,6 +217,23 @@ def lambda_handler(event, context):
                 ))
 
                 print("Pull request upserted successfully.")
+
+                # 🔔 Broadcast PR event to all websocket connections
+                payload_ws = {
+                    "event": "github:pull_request",
+                    "repo": repo,
+                    "pr_number": pr_number,
+                    "title": title,
+                    "action": action,
+                    "state": state,
+                    "author": author_login,
+                    "merged": merged,
+                    "head_sha": head_sha,
+                    "timestamp": timestamp.isoformat(),
+                    "raw": pr
+                }
+
+                broadcast_to_all(payload_ws)
 
 
 
