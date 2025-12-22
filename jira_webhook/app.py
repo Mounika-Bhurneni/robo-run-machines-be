@@ -9,6 +9,43 @@ import requests
 from requests.auth import HTTPBasicAuth
 
 
+import boto3
+
+def send_ws_message(connection_id, data):
+    """
+    Send JSON message to a specific WebSocket connection via API Gateway
+    """
+    ws_client = boto3.client("apigatewaymanagementapi",
+                             endpoint_url="https://7mbg70wjz8.execute-api.us-east-1.amazonaws.com/prod/")  # e.g., https://<id>.execute-api.us-east-1.amazonaws.com/prod
+    try:
+        ws_client.post_to_connection(
+            ConnectionId=connection_id,
+            Data=json.dumps(data).encode("utf-8")
+        )
+        print(f"Sent message to connection {connection_id}")
+    except ws_client.exceptions.GoneException:
+        print(f"Connection {connection_id} no longer exists")
+    except Exception as e:
+        print(f"Error sending WS message: {str(e)}")
+
+def broadcast_to_all(payload):
+    """
+    Fetch all connection IDs and send the payload to each.
+    """
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT connection_id FROM websocket_connections")
+        rows = cur.fetchall()
+        for (connection_id,) in rows:
+            send_ws_message(connection_id, payload)
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"Error broadcasting WS event: {str(e)}")
+
+
+
 def extract_author_email(body, issue=None, comment=None, worklog=None):
     account_id = None
 
@@ -237,6 +274,18 @@ def handle_issue_created(issue):
         conn.commit()
         print(f"Issue {issue.get('key')} created/updated with email addresses.")
 
+        # Broadcast to connected WebSocket clients
+        payload = {
+            "event": "jira:issue_created",
+            "issue_key": issue.get("key"),
+            "summary": issue.get("fields", {}).get("summary"),
+            "status": issue.get("fields", {}).get("status", {}).get("name"),
+            "assignee": issue.get("fields", {}).get("assignee", {}).get("displayName"),
+            "reporter": issue.get("fields", {}).get("reporter", {}).get("displayName"),
+            "raw": issue
+        }
+        broadcast_to_all(payload)
+
     except Exception as e:
         print("Error in handle_issue_created:", str(e))
 
@@ -263,6 +312,20 @@ def handle_issue_deleted(issue):
         cur.close()
         conn.close()
         print(f"Issue {issue.get('key')} deleted.")
+        # 🔔 Broadcast to all websocket connections
+        payload = {
+            "event": "jira:issue_deleted",
+            "issue_key": issue.get("key"),
+            "summary": issue.get("fields", {}).get("summary"),
+            "status": issue.get("fields", {}).get("status", {}).get("name"),
+            "assignee": issue.get("fields", {}).get("assignee", {}).get("displayName")
+                if issue.get("fields", {}).get("assignee") else None,
+            "reporter": issue.get("fields", {}).get("reporter", {}).get("displayName")
+                if issue.get("fields", {}).get("reporter") else None,
+            "raw": issue
+        }
+
+        broadcast_to_all(payload)
     except Exception as e:
         print("Error in handle_issue_deleted:", str(e))
 
@@ -312,6 +375,21 @@ def handle_sprint_events(event_type, sprint, repo_or_board_id=None, author_login
         cur.close()
         conn.close()
         print(f"Sprint event '{event_type}' recorded successfully.")
+        # 🔔 Broadcast to all websocket connections
+        payload = {
+            "event": event_type,  # sprint_created / sprint_updated / sprint_started / sprint_closed / sprint_deleted
+            "sprint_id": sprint.get("id"),
+            "name": sprint.get("name"),
+            "state": sprint.get("state"),
+            "start_date": sprint.get("startDate"),
+            "end_date": sprint.get("endDate"),
+            "goal": sprint.get("goal"),
+            "board_id": repo_or_board_id,
+            "author": author_login,
+            "raw": sprint
+        }
+
+        broadcast_to_all(payload)
 
     except Exception as e:
         print(f"Error recording sprint event '{event_type}':", str(e))
@@ -505,6 +583,20 @@ def handle_subtask_events(event_type, issue, board_id=None, author_login=None):
         cur.close()
         conn.close()
         print(f"Subtask event '{event_type}' recorded successfully.")
+
+        # 🔔 Broadcast to all websocket connections
+        payload = {
+            "event": event_type,  # subtask_created / subtask_updated / subtask_deleted
+            "subtask_id": subtask_id,
+            "parent_issue_id": parent_issue_id,
+            "summary": summary,
+            "status": status,
+            "board_id": board_id,
+            "author": author_login,
+            "raw": issue
+        }
+
+        broadcast_to_all(payload)
 
     except Exception as e:
         print(f"Error recording subtask event '{event_type}':", str(e))
