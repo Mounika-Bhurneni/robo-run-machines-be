@@ -48,6 +48,7 @@ def broadcast_to_all(payload):
     """
     Fetch all connection IDs and send the payload to each.
     """
+    print("broadcast_to_all==>")
     try:
         conn = get_connection()
         cur = conn.cursor()
