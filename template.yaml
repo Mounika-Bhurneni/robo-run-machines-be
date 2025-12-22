@@ -885,6 +885,33 @@ Resources:
           DB_PORT: !Ref ParamDBPort
 
 
+  WebSocketFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-web-socket"
+      CodeUri: web_socket/
+      Handler: app.lambda_handler
+      Runtime: python3.11
+      Timeout: 30
+      MemorySize: 512
+      Events:
+        WebChatPost:
+          Type: HttpApi
+          Properties:
+            Path: /web-socket
+            Method: post
+            ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: CognitoJwt
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+          DB_PORT: !Ref ParamDBPort
+
+
 Outputs:
   HttpApiUrl:
     Description: "Base URL for the HTTP API"
