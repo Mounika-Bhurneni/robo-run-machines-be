@@ -11,6 +11,22 @@ from requests.auth import HTTPBasicAuth
 
 import boto3
 
+def get_board_name(board_id):
+    if not board_id:
+        return None
+
+    url = f"https://praveenreddygopidi.atlassian.net/rest/agile/1.0/board/{board_id}"
+    auth = HTTPBasicAuth(os.environ["JIRA_USER"], os.environ["JIRA_API_TOKEN"])
+    headers = {"Accept": "application/json"}
+
+    resp = requests.get(url, headers=headers, auth=auth)
+    if resp.status_code == 200:
+        return resp.json().get("name")
+    else:
+        print("Failed to fetch board name for board:", board_id)
+        return None
+
+
 def send_ws_message(connection_id, data):
     """
     Send JSON message to a specific WebSocket connection via API Gateway
@@ -197,53 +213,108 @@ def handle_issue_created(issue):
 
         fields = issue.get("fields", {})
 
-        # --- Fetch org_id ---
+        # ===============================
+        # Story Points (custom field)
+        # ===============================
+        story_points_field = os.environ.get("STORY_POINTS_FIELD")
+        story_points = fields.get(story_points_field) if story_points_field else None
+
+        # ===============================
+        # Project info
+        # ===============================
+        project = fields.get("project", {})
+        project_id = project.get("id")
+        project_name = project.get("name")
+
+        # ===============================
+        # Board info
+        # ===============================
+        board_id = issue.get("originBoardId")
+        board_name = get_board_name(board_id)
+
+        # ===============================
+        # Org ID
+        # ===============================
         org = fields.get("organization")
         if org and org.get("id"):
             org_id = str(org.get("id"))
         else:
-            project = fields.get("project")
-            org_id = str(project.get("id")) if project and project.get("id") else None
+            org_id = str(project_id) if project_id else None
 
-        # --- Fetch assignee ---
+        # ===============================
+        # Assignee
+        # ===============================
         assignee = fields.get("assignee")
-        assignee_id = assignee.get("id") or assignee.get("accountId") if assignee else None
+        assignee_id = assignee.get("accountId") if assignee else None
         assignee_name = assignee.get("displayName") if assignee else None
-        assignee_email =  get_jira_user_email(assignee_id)
+        assignee_email = get_jira_user_email(assignee_id)
 
-
-        # --- Fetch reporter ---
+        # ===============================
+        # Reporter
+        # ===============================
         reporter = fields.get("reporter")
-        reporter_id = reporter.get("id") or reporter.get("accountId") if reporter else None
+        reporter_id = reporter.get("accountId") if reporter else None
         reporter_name = reporter.get("displayName") if reporter else None
-        reporter_email =  get_jira_user_email(reporter_id)
+        reporter_email = get_jira_user_email(reporter_id)
 
-
-        # --- Other fields ---
-        status = fields.get("status", {}).get("name") if fields.get("status") else None
-        priority = fields.get("priority", {}).get("name") if fields.get("priority") else None
+        # ===============================
+        # Other fields
+        # ===============================
+        status = fields.get("status", {}).get("name")
+        priority = fields.get("priority", {}).get("name")
         components = json.dumps(fields.get("components") or [])
-
-        print("Assignee email:===>", assignee_email)
-        print("Reporter email:====>", reporter_email)
-
 
         sql = """
             INSERT INTO jira_issues (
-                id, issue_key, org_id, 
-                assignee_user_id, assignee_name, assignee_email,
-                reporter_user_id, reporter_name, reporter_email,
-                status, priority, component, updated_at, raw
+                id,
+                issue_key,
+                org_id,
+
+                project_id,
+                project_name,
+                board_id,
+                board_name,
+                story_points,
+
+                assignee_user_id,
+                assignee_name,
+                assignee_email,
+
+                reporter_user_id,
+                reporter_name,
+                reporter_email,
+
+                status,
+                priority,
+                component,
+                updated_at,
+                raw
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (
+                %s, %s, %s,
+                %s, %s, %s, %s, %s,
+                %s, %s, %s,
+                %s, %s, %s,
+                %s, %s, %s,
+                %s, %s
+            )
             ON CONFLICT (issue_key)
             DO UPDATE SET
+                org_id = EXCLUDED.org_id,
+                project_id = EXCLUDED.project_id,
+                project_name = EXCLUDED.project_name,
+                board_id = EXCLUDED.board_id,
+                board_name = EXCLUDED.board_name,
+                story_points = EXCLUDED.story_points,
+
                 assignee_user_id = EXCLUDED.assignee_user_id,
                 assignee_name = EXCLUDED.assignee_name,
                 assignee_email = EXCLUDED.assignee_email,
+
                 reporter_user_id = EXCLUDED.reporter_user_id,
                 reporter_name = EXCLUDED.reporter_name,
                 reporter_email = EXCLUDED.reporter_email,
+
                 status = EXCLUDED.status,
                 priority = EXCLUDED.priority,
                 component = EXCLUDED.component,
@@ -255,6 +326,12 @@ def handle_issue_created(issue):
             str(issue.get("id")),
             issue.get("key"),
             org_id,
+
+            project_id,
+            project_name,
+            board_id,
+            board_name,
+            story_points,
 
             assignee_id,
             assignee_name,
@@ -272,17 +349,19 @@ def handle_issue_created(issue):
         ))
 
         conn.commit()
-        print(f"Issue {issue.get('key')} created/updated with email addresses.")
+        print(f"Issue {issue.get('key')} created/updated with story points & board info.")
 
-        # Broadcast to connected WebSocket clients
+        # 🔔 WebSocket broadcast
         payload = {
             "event": "jira:issue_created",
             "issue_key": issue.get("key"),
-            "summary": issue.get("fields", {}).get("summary"),
-            "status": issue.get("fields", {}).get("status", {}).get("name"),
-            "assignee": issue.get("fields", {}).get("assignee", {}).get("displayName"),
-            "reporter": issue.get("fields", {}).get("reporter", {}).get("displayName"),
-            "raw": issue
+            "summary": fields.get("summary"),
+            "status": status,
+            "story_points": story_points,
+            "project": project_name,
+            "board": board_name,
+            "assignee": assignee_name,
+            "reporter": reporter_name
         }
         broadcast_to_all(payload)
 
@@ -337,20 +416,65 @@ def handle_sprint_events(event_type, sprint, repo_or_board_id=None, author_login
     try:
         conn = get_connection()
         cur = conn.cursor()
+
         event_uuid = str(uuid.uuid4())
         timestamp = datetime.utcnow()
 
+        # ===============================
+        # Board info
+        # ===============================
+        board_id = repo_or_board_id or sprint.get("originBoardId")
+        board_name = get_board_name(board_id)
+
+        # ===============================
+        # Project info (if available)
+        # ===============================
+        project_id = sprint.get("projectId")
+        project_name = sprint.get("projectName")
+
         sql = """
-            INSERT INTO jira_sprints
-            (id, sprint_id, repo_or_board_id, name, state, start_date, end_date, goal, event_type, author_login, timestamp, raw)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO jira_sprints (
+                id,
+                sprint_id,
+
+                board_id,
+                board_name,
+
+                project_id,
+                project_name,
+
+                name,
+                state,
+                start_date,
+                end_date,
+                goal,
+
+                event_type,
+                author_login,
+                timestamp,
+                raw
+            )
+            VALUES (
+                %s, %s,
+                %s, %s,
+                %s, %s,
+                %s, %s, %s, %s, %s,
+                %s, %s, %s, %s
+            )
             ON CONFLICT (sprint_id, event_type)
             DO UPDATE SET
+                board_id = EXCLUDED.board_id,
+                board_name = EXCLUDED.board_name,
+
+                project_id = EXCLUDED.project_id,
+                project_name = EXCLUDED.project_name,
+
                 name = EXCLUDED.name,
                 state = EXCLUDED.state,
                 start_date = EXCLUDED.start_date,
                 end_date = EXCLUDED.end_date,
                 goal = EXCLUDED.goal,
+
                 author_login = EXCLUDED.author_login,
                 timestamp = EXCLUDED.timestamp,
                 raw = EXCLUDED.raw
@@ -358,13 +482,20 @@ def handle_sprint_events(event_type, sprint, repo_or_board_id=None, author_login
 
         cur.execute(sql, (
             event_uuid,
-            sprint["id"],
-            repo_or_board_id,
+            sprint.get("id"),
+
+            board_id,
+            board_name,
+
+            project_id,
+            project_name,
+
             sprint.get("name"),
             sprint.get("state"),
             sprint.get("startDate"),
             sprint.get("endDate"),
             sprint.get("goal"),
+
             event_type,
             author_login,
             timestamp,
@@ -374,19 +505,22 @@ def handle_sprint_events(event_type, sprint, repo_or_board_id=None, author_login
         conn.commit()
         cur.close()
         conn.close()
-        print(f"Sprint event '{event_type}' recorded successfully.")
-        # 🔔 Broadcast to all websocket connections
+
+        print(f"Sprint event '{event_type}' recorded with board & project info.")
+
+        # 🔔 WebSocket broadcast
         payload = {
-            "event": event_type,  # sprint_created / sprint_updated / sprint_started / sprint_closed / sprint_deleted
+            "event": event_type,
             "sprint_id": sprint.get("id"),
             "name": sprint.get("name"),
             "state": sprint.get("state"),
             "start_date": sprint.get("startDate"),
             "end_date": sprint.get("endDate"),
             "goal": sprint.get("goal"),
-            "board_id": repo_or_board_id,
-            "author": author_login,
-            "raw": sprint
+            "board_id": board_id,
+            "board_name": board_name,
+            "project": project_name,
+            "author": author_login
         }
 
         broadcast_to_all(payload)
@@ -548,17 +682,54 @@ def handle_subtask_events(event_type, issue, board_id=None, author_login=None):
         event_uuid = str(uuid.uuid4())
         timestamp = datetime.utcnow()
 
+        # -------------------------
+        # Subtask basic info
+        # -------------------------
         subtask_id = issue["id"]
         parent_issue_id = issue.get("parent", {}).get("id")
-        summary = issue.get("fields", {}).get("summary")
-        status = issue.get("fields", {}).get("status", {}).get("name")
+        fields = issue.get("fields", {})
+        summary = fields.get("summary")
+        status = fields.get("status", {}).get("name")
+
+        # -------------------------
+        # Board info
+        # -------------------------
+        board_id = board_id or issue.get("originBoardId")
+        board_name = get_board_name(board_id)
+
+        # -------------------------
+        # Project info
+        # -------------------------
+        project = fields.get("project", {})
+        project_id = project.get("id")
+        project_name = project.get("name")
 
         sql = """
-            INSERT INTO jira_subtasks
-            (id, subtask_id, parent_issue_id, board_id, summary, status, event_type, author_login, timestamp, raw)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO jira_subtasks (
+                id,
+                subtask_id,
+                parent_issue_id,
+
+                board_id,
+                board_name,
+
+                project_id,
+                project_name,
+
+                summary,
+                status,
+                event_type,
+                author_login,
+                timestamp,
+                raw
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (subtask_id, event_type)
             DO UPDATE SET
+                board_id = EXCLUDED.board_id,
+                board_name = EXCLUDED.board_name,
+                project_id = EXCLUDED.project_id,
+                project_name = EXCLUDED.project_name,
                 summary = EXCLUDED.summary,
                 status = EXCLUDED.status,
                 author_login = EXCLUDED.author_login,
@@ -570,7 +741,13 @@ def handle_subtask_events(event_type, issue, board_id=None, author_login=None):
             event_uuid,
             subtask_id,
             parent_issue_id,
+
             board_id,
+            board_name,
+
+            project_id,
+            project_name,
+
             summary,
             status,
             event_type,
@@ -582,16 +759,18 @@ def handle_subtask_events(event_type, issue, board_id=None, author_login=None):
         conn.commit()
         cur.close()
         conn.close()
-        print(f"Subtask event '{event_type}' recorded successfully.")
+        print(f"Subtask event '{event_type}' recorded with board & project info.")
 
-        # 🔔 Broadcast to all websocket connections
+        # 🔔 WebSocket broadcast
         payload = {
-            "event": event_type,  # subtask_created / subtask_updated / subtask_deleted
+            "event": event_type,
             "subtask_id": subtask_id,
             "parent_issue_id": parent_issue_id,
             "summary": summary,
             "status": status,
             "board_id": board_id,
+            "board_name": board_name,
+            "project": project_name,
             "author": author_login,
             "raw": issue
         }
