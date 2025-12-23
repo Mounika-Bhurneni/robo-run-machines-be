@@ -431,50 +431,54 @@ def handle_sprint_events(event_type, sprint, repo_or_board_id=None, author_login
         # ===============================
         project_id = sprint.get("projectId")
         project_name = sprint.get("projectName")
+        org_id = sprint.get("orgId")  # optional, adjust if you track org_id
 
+        # ===============================
+        # Ensure project exists or update name
+        # ===============================
+        if project_id and project_name:
+            project_sql = """
+                INSERT INTO projects (id, org_id, name, created_at)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (id)
+                DO UPDATE SET name = EXCLUDED.name
+            """
+            cur.execute(project_sql, (project_id, org_id, project_name, datetime.utcnow()))
+            print(f"Project '{project_name}' ensured/updated in projects table.")
+
+        # ===============================
+        # Insert or update sprint record
+        # ===============================
         sql = """
             INSERT INTO jira_sprints (
                 id,
                 sprint_id,
-
                 board_id,
                 board_name,
-
                 project_id,
                 project_name,
-
                 name,
                 state,
                 start_date,
                 end_date,
                 goal,
-
                 event_type,
                 author_login,
                 timestamp,
                 raw
             )
-            VALUES (
-                %s, %s,
-                %s, %s,
-                %s, %s,
-                %s, %s, %s, %s, %s,
-                %s, %s, %s, %s
-            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (sprint_id, event_type)
             DO UPDATE SET
                 board_id = EXCLUDED.board_id,
                 board_name = EXCLUDED.board_name,
-
                 project_id = EXCLUDED.project_id,
                 project_name = EXCLUDED.project_name,
-
                 name = EXCLUDED.name,
                 state = EXCLUDED.state,
                 start_date = EXCLUDED.start_date,
                 end_date = EXCLUDED.end_date,
                 goal = EXCLUDED.goal,
-
                 author_login = EXCLUDED.author_login,
                 timestamp = EXCLUDED.timestamp,
                 raw = EXCLUDED.raw
@@ -483,19 +487,15 @@ def handle_sprint_events(event_type, sprint, repo_or_board_id=None, author_login
         cur.execute(sql, (
             event_uuid,
             sprint.get("id"),
-
             board_id,
             board_name,
-
             project_id,
             project_name,
-
             sprint.get("name"),
             sprint.get("state"),
             sprint.get("startDate"),
             sprint.get("endDate"),
             sprint.get("goal"),
-
             event_type,
             author_login,
             timestamp,

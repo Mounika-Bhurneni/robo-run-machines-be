@@ -912,6 +912,33 @@ Resources:
           DB_PORT: !Ref ParamDBPort
 
 
+  DeveloperWorkloadIndividualFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-developer-workload-individual"
+      CodeUri: developer_workload_individual/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 512
+      Layers: [!Ref MyLibLayer]
+      Events:
+        DeveloperWorkloadIndividualGet:
+          Type: HttpApi
+          Properties:
+            Path: /developers/workload/individual
+            Method: post
+            ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: CognitoJwt
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+
+
 Outputs:
   HttpApiUrl:
     Description: "Base URL for the HTTP API"

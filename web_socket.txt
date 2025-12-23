@@ -111,3 +111,24 @@ if route == "jira.events":
   "prNumber": 12,
   "author": "Akshay"
 }
+
+
+
+
+==============================
+github.events
+jira.events
+chat.history
+chat.receive
+chat.send
+system.user.offline
+system.user.online
+system.broadcast
+github.pullrequest.merged
+github.pullrequest.opened
+github.push
+jira.project.updated
+jira.issue.updated
+jira.issue.created
+sendMessage
+fetchMessages
