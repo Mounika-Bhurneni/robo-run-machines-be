@@ -16,16 +16,15 @@ Parameters:
     Type: String
     Default: "3306"
 
-  ParamOpenAIKey:
-    Type: String
-    NoEcho: true
-
-
-
   # Composio & Jira
   ParamComposioKey:
     Type: String
     NoEcho: true
+    
+  ParamOpenAIKey:
+    Type: String
+    NoEcho: true
+
   ParamJiraInstanceUrl:
     Type: String
   ParamJiraEmail:
@@ -33,7 +32,6 @@ Parameters:
   ParamJiraApiToken:
     Type: String
     NoEcho: true
-
 
   # Cognito
   ParamUserPoolId:
@@ -280,6 +278,8 @@ Resources:
           DB_USER: !Ref ParamDBUser
           DB_PASSWORD: !Ref ParamDBPassword
           DB_NAME: !Ref ParamDBName
+          JIRA_USER: !Ref ParamJiraEmail
+          JIRA_API_TOKEN: !Ref ParamJiraApiToken
 
 
   GitHubWebhookFunction:
@@ -496,6 +496,34 @@ Resources:
           DB_NAME: !Ref ParamDBName
 
 
+  JiraRecentActivityFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-jira-recent-activity"
+      CodeUri: recent_jira_activity/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 512
+      Layers:
+        - !Ref MyLibLayer
+      Events:
+        JiraRecentActivityGet:
+          Type: HttpApi
+          Properties:
+            Path: /jira/activity/recent
+            Method: get
+            ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: CognitoJwt
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+
+
   WeeklyAnalyticsFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -577,8 +605,8 @@ Resources:
 
 
   PRBottleneckFunction:
-    Type: AWS::Serverless::Function
-    Properties:
+      Type: AWS::Serverless::Function
+      Properties:
         FunctionName: !Sub "${AWS::StackName}-pr-bottleneck"
         CodeUri: pr_bottleneck/
         Handler: app.lambda_handler
@@ -656,6 +684,261 @@ Resources:
       Environment:
         Variables:
           APP_CLIENT_ID: !Ref ParamCognitoClientId  
+
+  WorkloadAnalyticsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-workload-analytics"
+      CodeUri: workload_analytics/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 512
+      Layers: [!Ref MyLibLayer]
+      Events:
+        WorkloadGet:
+          Type: HttpApi
+          Properties:
+            Path: /analytics/workload
+            Method: get
+            ApiId: !Ref HttpApi
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+          DB_PORT: !Ref ParamDBPort
+          DEFAULT_CAPACITY: "8"
+          CAP_DEV: "8"
+          CAP_QA: "6"
+          CAP_MANAGER: "5"
+          CAP_DEV_MANAGER: "6"
+          WEIGHT_ISSUE: "1.0"
+          WEIGHT_SUBTASK: "0.5"
+          WEIGHT_PR: "0.8"
+          WEIGHT_COMMIT: "0.1"
+          HIGH_PRIORITY_MULTIPLIER: "1.5"
+          UNDERLOAD_THRESHOLD_PERCENT: "80.0"
+          DEFAULT_COMMIT_DAYS: "7"
+
+
+  RiskInsightsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-risk-insights"
+      CodeUri: risk_insights/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 512
+      Layers: [!Ref MyLibLayer]
+      Events:
+        RiskInsightsGet:
+          Type: HttpApi
+          Properties:
+            Path: /analytics/risk
+            Method: get
+            ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: CognitoJwt   # MANAGER-only visibility
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+          DB_PORT: !Ref ParamDBPort
+
+          # ---- Risk Configuration ----
+          RISK_WINDOW_DAYS: "7"
+          STALE_JIRA_DAYS: "5"
+          PR_STUCK_DAYS: "5"
+
+          # ---- Severity Weights ----
+          WEIGHT_STALE_JIRA: "1.0"
+          WEIGHT_HIGH_PRIORITY_JIRA: "2.0"
+          WEIGHT_STUCK_PR: "1.5"
+          WEIGHT_CRITICAL_INCIDENT: "3.0"
+
+
+
+  UpdateUserFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-update-user"
+      CodeUri: update_user/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 512
+      Layers: [!Ref MyLibLayer]
+      Events:
+        UpdateUserPut:
+          Type: HttpApi
+          Properties:
+            Path: /users/update
+            Method: put
+            ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: CognitoJwt   # MANAGER / DEV_MANAGER only
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+          DB_PORT: !Ref ParamDBPort
+
+          USER_POOL_ID: !Ref ParamUserPoolId
+
+          # ---- User Configuration ----
+          ALLOWED_ROLES: "DEV,QA,MANAGER,DEV_MANAGER"
+          ADMIN_ROLES: "MANAGER,DEV_MANAGER"
+
+
+
+  FetchUserFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-fetch-user"
+      CodeUri: fetch_user/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 512
+      Layers: [!Ref MyLibLayer]
+      Events:
+        FetchUserGet:
+          Type: HttpApi
+          Properties:
+            Path: /users/details
+            Method: get
+            ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: CognitoJwt   # MANAGER / DEV_MANAGER only
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+          DB_PORT: !Ref ParamDBPort
+
+          USER_POOL_ID: !Ref ParamUserPoolId
+
+
+  UserActivityAIFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-user-activity-ai"
+      CodeUri: user_activity_ai/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 60
+      MemorySize: 1024
+      Layers: [!Ref MyLibLayer]
+      Events:
+        UserActivityPost:
+          Type: HttpApi
+          Properties:
+            Path: /ai/user-activity
+            Method: post
+            ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: CognitoJwt   # MANAGER / DEV_MANAGER
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+          DB_PORT: !Ref ParamDBPort
+
+          OPENAI_API_KEY: !Ref ParamOpenAIKey
+
+
+  WeeklyCommitPRAnalyticsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-weekly-commit-pr-analytics"
+      CodeUri: weekly_commit_pr_analytics/
+      Handler: app.lambda_handler
+      Runtime: python3.11
+      Timeout: 30
+      MemorySize: 512
+      Events:
+        WeeklyAnalyticsGet:
+          Type: HttpApi
+          Properties:
+            Path: /weekly-analytics
+            Method: get
+            ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: CognitoJwt   # Optional: for secured access
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+          DB_PORT: !Ref ParamDBPort
+
+
+  WebSocketFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-web-socket"
+      CodeUri: web_socket/
+      Handler: app.lambda_handler
+      Runtime: python3.11
+      Timeout: 30
+      MemorySize: 512
+      Events:
+        WebChatPost:
+          Type: HttpApi
+          Properties:
+            Path: /web-socket
+            Method: post
+            ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: CognitoJwt
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+          DB_PORT: !Ref ParamDBPort
+
+
+  DeveloperWorkloadIndividualFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-developer-workload-individual"
+      CodeUri: developer_workload_individual/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 512
+      Layers: [!Ref MyLibLayer]
+      Events:
+        DeveloperWorkloadIndividualGet:
+          Type: HttpApi
+          Properties:
+            Path: /developers/workload/individual
+            Method: post
+            ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: CognitoJwt
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+
+
 
   WorkloadAnalyticsFunction:
     Type: AWS::Serverless::Function
@@ -809,9 +1092,6 @@ Resources:
           DB_PORT: !Ref ParamDBPort
 
 
-
-  
-  
 Outputs:
   HttpApiUrl:
     Description: "Base URL for the HTTP API"
