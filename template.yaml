@@ -16,6 +16,12 @@ Parameters:
     Type: String
     Default: "3306"
 
+  ParamOpenAIKey:
+    Type: String
+    NoEcho: true
+
+
+
   # Composio & Jira
   ParamComposioKey:
     Type: String
@@ -692,40 +698,31 @@ Resources:
   RiskInsightsFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub "${AWS::StackName}-risk-insights"
+      FunctionName: risk-insights
       CodeUri: risk_insights/
       Handler: app.lambda_handler
-      Runtime: python3.10
+      Runtime: python3.11
       Timeout: 30
       MemorySize: 512
-      Layers: [!Ref MyLibLayer]
+      Environment:
+        Variables:
+          DB_HOST: !Ref DBHost
+          DB_USER: !Ref DBUser
+          DB_PASSWORD: !Ref DBPassword
+          DB_NAME: !Ref DBName
+          DB_PORT: "5432"
+          WINDOW_DAYS: "7"
+          AT_RISK_DAYS: "7"
+          HIGH_PRIORITY_DAYS: "5"
+          PR_STUCK_HOURS: "72"
       Events:
-        RiskInsightsGet:
+        RiskInsightsApi:
           Type: HttpApi
           Properties:
             Path: /analytics/risk
-            Method: get
-            ApiId: !Ref HttpApi
-            Auth:
-              Authorizer: CognitoJwt   # MANAGER-only visibility
-      Environment:
-        Variables:
-          DB_HOST: !Ref ParamDBHost
-          DB_USER: !Ref ParamDBUser
-          DB_PASSWORD: !Ref ParamDBPassword
-          DB_NAME: !Ref ParamDBName
-          DB_PORT: !Ref ParamDBPort
+            Method: GET
 
-          # ---- Risk Configuration ----
-          RISK_WINDOW_DAYS: "7"
-          STALE_JIRA_DAYS: "5"
-          PR_STUCK_DAYS: "5"
 
-          # ---- Severity Weights ----
-          WEIGHT_STALE_JIRA: "1.0"
-          WEIGHT_HIGH_PRIORITY_JIRA: "2.0"
-          WEIGHT_STUCK_PR: "1.5"
-          WEIGHT_CRITICAL_INCIDENT: "3.0"
 
   
   CurrentSprintCommitsFunction:
@@ -759,6 +756,61 @@ Resources:
 
 
 
+
+  AiChatAssistantFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: ai_chat_assistant_function
+      CodeUri: ai_chat_assistant/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 120
+      MemorySize: 1024
+      Events:
+        FactsPost:
+          Type: HttpApi
+          Properties:
+            Path: /facts
+            Method: post
+            ApiId: !Ref HttpApi
+      Environment:
+        Variables:
+          OPENAI_API_KEY: !Ref ParamOpenAIKey
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+          DB_PORT: !Ref ParamDBPort
+
+
+  AiSummaryRecommendationsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: ai_summary_recommendations_function
+      CodeUri: ai_summary_recommendations/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 180
+      MemorySize: 1024
+      Events:
+        SummaryPost:
+          Type: HttpApi
+          Properties:
+            Path: /ai/summary
+            Method: GET
+            ApiId: !Ref HttpApi
+      Environment:
+        Variables:
+          OPENAI_API_KEY: !Ref ParamOpenAIKey
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+          DB_PORT: !Ref ParamDBPort
+
+
+
+  
   
 Outputs:
   HttpApiUrl:
