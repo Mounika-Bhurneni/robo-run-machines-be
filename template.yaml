@@ -939,6 +939,159 @@ Resources:
           DB_NAME: !Ref ParamDBName
 
 
+
+  WorkloadAnalyticsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-workload-analytics"
+      CodeUri: workload_analytics/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 512
+      Layers: [!Ref MyLibLayer]
+      Events:
+        WorkloadGet:
+          Type: HttpApi
+          Properties:
+            Path: /analytics/workload
+            Method: get
+            ApiId: !Ref HttpApi
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+          DB_PORT: !Ref ParamDBPort
+          DEFAULT_CAPACITY: "8"
+          CAP_DEV: "8"
+          CAP_QA: "6"
+          CAP_MANAGER: "5"
+          CAP_DEV_MANAGER: "6"
+          WEIGHT_ISSUE: "1.0"
+          WEIGHT_SUBTASK: "0.5"
+          WEIGHT_PR: "0.8"
+          WEIGHT_COMMIT: "0.1"
+          HIGH_PRIORITY_MULTIPLIER: "1.5"
+          UNDERLOAD_THRESHOLD_PERCENT: "80.0"
+          DEFAULT_COMMIT_DAYS: "7"
+
+
+  RiskInsightsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: risk-insights
+      CodeUri: risk_insights/
+      Handler: app.lambda_handler
+      Runtime: python3.11
+      Timeout: 30
+      MemorySize: 512
+      Environment:
+        Variables:
+          DB_HOST: !Ref DBHost
+          DB_USER: !Ref DBUser
+          DB_PASSWORD: !Ref DBPassword
+          DB_NAME: !Ref DBName
+          DB_PORT: "5432"
+          WINDOW_DAYS: "7"
+          AT_RISK_DAYS: "7"
+          HIGH_PRIORITY_DAYS: "5"
+          PR_STUCK_HOURS: "72"
+      Events:
+        RiskInsightsApi:
+          Type: HttpApi
+          Properties:
+            Path: /analytics/risk
+            Method: GET
+
+
+
+  
+  CurrentSprintCommitsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-current-sprint-commits"
+      CodeUri: current_sprint_commits/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 512
+      Layers:
+        - !Ref MyLibLayer
+      Events:
+        CurrentSprintCommitsGet:
+          Type: HttpApi
+          Properties:
+            Path: /jira/sprint/commits
+            Method: get
+            ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: CognitoJwt
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+          DB_PORT: !Ref ParamDBPort
+
+
+
+
+
+  AiChatAssistantFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: ai_chat_assistant_function
+      CodeUri: ai_chat_assistant/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 120
+      MemorySize: 1024
+      Events:
+        FactsPost:
+          Type: HttpApi
+          Properties:
+            Path: /facts
+            Method: post
+            ApiId: !Ref HttpApi
+      Environment:
+        Variables:
+          OPENAI_API_KEY: !Ref ParamOpenAIKey
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+          DB_PORT: !Ref ParamDBPort
+
+
+  AiSummaryRecommendationsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: ai_summary_recommendations_function
+      CodeUri: ai_summary_recommendations/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 180
+      MemorySize: 1024
+      Events:
+        SummaryPost:
+          Type: HttpApi
+          Properties:
+            Path: /ai/summary
+            Method: GET
+            ApiId: !Ref HttpApi
+      Environment:
+        Variables:
+          OPENAI_API_KEY: !Ref ParamOpenAIKey
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+          DB_PORT: !Ref ParamDBPort
+
+
 Outputs:
   HttpApiUrl:
     Description: "Base URL for the HTTP API"
