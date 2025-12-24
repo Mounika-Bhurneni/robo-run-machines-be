@@ -11,15 +11,15 @@ API_REGISTRY = {
     "workload_analytics": "http://127.0.0.1:3000/analytics/workload",#5
 
     # Jira
-    #"tasks_today": "http://127.0.0.1:3000/jira/tasks/today",#8
+    "tasks_today": "http://127.0.0.1:3000/jira/tasks/today",#8
     "team_insights": "http://127.0.0.1:3000/jira/team/insights",#9
-   # "current_sprint_commits": "http://127.0.0.1:3000/jira/sprint/commits",#9
+    "current_sprint_commits": "http://127.0.0.1:3000/jira/sprint/commits",#9
 
     # Git
-   # "recent_git_activity": "http://127.0.0.1:3000/git/recent",#11
-   # "weekly_analytics": "http://127.0.0.1:3000/analytics/weekly",#10
-    #"pr_bottleneck": "http://127.0.0.1:3000/prs/bottlenecks",#6
+    "recent_git_activity": "http://127.0.0.1:3000/git/recent",#11
+    "weekly_analytics": "http://127.0.0.1:3000/analytics/weekly",#10
+    "pr_bottleneck": "http://127.0.0.1:3000/prs/bottlenecks",#6
 
     # Activity
-    #"recent_activity": "http://127.0.0.1:3000/activity/recent"#12
+    "recent_activity": "http://127.0.0.1:3000/activity/recent"#12
 }
