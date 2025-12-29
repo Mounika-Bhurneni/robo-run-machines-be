@@ -993,7 +993,7 @@ Resources:
           DB_USER: !Ref ParamDBUser
           DB_PASSWORD: !Ref ParamDBPassword
           DB_NAME: !Ref ParamDBName
-          DB_PORT: "5432"
+          DB_PORT: !Ref ParamDBPort
           WINDOW_DAYS: "7"
           AT_RISK_DAYS: "7"
           HIGH_PRIORITY_DAYS: "5"
