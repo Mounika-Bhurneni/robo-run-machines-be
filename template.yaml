@@ -969,6 +969,7 @@ Resources:
           UNDERLOAD_THRESHOLD_PERCENT: "80.0"
           DEFAULT_COMMIT_DAYS: "7"
 
+
   
   CurrentSprintCommitsFunction:
     Type: AWS::Serverless::Function
@@ -1047,6 +1048,31 @@ Resources:
       Environment:
         Variables:
           OPENAI_API_KEY: !Ref ParamOpenAIKey
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+          DB_PORT: !Ref ParamDBPort
+
+
+  FetchNotificationsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: fetch_notifications_function
+      CodeUri: fetch_notifications/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 512
+      Events:
+        FetchNotifications:
+          Type: HttpApi
+          Properties:
+            Path: /notifications
+            Method: GET
+            ApiId: !Ref HttpApi
+      Environment:
+        Variables:
           DB_HOST: !Ref ParamDBHost
           DB_USER: !Ref ParamDBUser
           DB_PASSWORD: !Ref ParamDBPassword

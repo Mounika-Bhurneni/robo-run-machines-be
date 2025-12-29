@@ -116,6 +116,8 @@ def lambda_handler(event, context):
                 "name": name,
                 "state": state,
                 "goal": goal,
+                "total_days":total_days,
+                "elapsed_days":elapsed_days,
                 "start_date": str(start_date),
                 "end_date": str(end_date),
                 "status": status,

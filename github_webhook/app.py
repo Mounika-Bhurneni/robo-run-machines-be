@@ -9,6 +9,106 @@ import psycopg2
 import psycopg2.extras
 import boto3
 
+def notify_and_broadcast(*, notification_args, ws_payload):
+    try:
+        insert_notification(**notification_args)
+    except Exception as e:
+        print("Notification failed:", e)
+
+    try:
+        broadcast_to_all(ws_payload)
+    except Exception as e:
+        print("WebSocket broadcast failed:", e)
+
+
+def insert_notification(
+    *,
+    source,
+    event_name,
+    action=None,
+    org_id=None,
+    project_id=None,
+    project_name=None,
+    board_id=None,
+    board_name=None,
+    entity_type=None,
+    entity_id=None,
+    entity_key=None,
+    parent_entity_id=None,
+    actor_email=None,
+    actor_login=None,
+    title=None,
+    message,
+    extra=None,
+    raw
+):
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+
+        sql = """
+            INSERT INTO notifications (
+                source,
+                event_name,
+                action,
+                org_id,
+                project_id,
+                project_name,
+                board_id,
+                board_name,
+                entity_type,
+                entity_id,
+                entity_key,
+                parent_entity_id,
+                actor_login,
+                actor_email,
+                title,
+                message,
+                extra,
+                raw
+            )
+            VALUES (
+                %s, %s, %s,
+                %s, %s, %s,
+                %s, %s,
+                %s, %s, %s, %s,
+                %s, %s,
+                %s, %s,
+                %s, %s
+            )
+            ON CONFLICT (source, event_name, entity_id, action)
+            DO NOTHING
+        """
+
+        cur.execute(sql, (
+            source,
+            event_name,
+            action,
+            org_id,
+            project_id,
+            project_name,
+            board_id,
+            board_name,
+            entity_type,
+            entity_id,
+            entity_key,
+            parent_entity_id,
+            actor_login,
+            actor_email,
+            title,
+            message,
+            json.dumps(extra) if extra else None,
+            json.dumps(raw)
+        ))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+    except Exception as e:
+        print("❌ Notification insert failed:", str(e))
+
+
 # ==========================================================
 # 1. PostgreSQL Connection.     
 # ==========================================================
@@ -172,6 +272,21 @@ def lambda_handler(event, context):
                 }
 
                 broadcast_to_all(payload_ws)
+                notify_and_broadcast(
+                    notification_args={
+                        "source": "github",
+                        "event_name": "github:push",
+                        "action": "push",
+                        "entity_type": "commit",
+                        "entity_id": commit_sha,
+                        "actor_email": author_email,
+                        "title": f"Push to {repo}",
+                        "message": message,
+                        "extra": {"files": files},
+                        "raw": payload
+                    },
+                    ws_payload=payload_ws
+                )
 
             elif github_event == "pull_request":
                 pr = payload["pull_request"]
@@ -235,6 +350,21 @@ def lambda_handler(event, context):
                 }
 
                 broadcast_to_all(payload_ws)
+                notify_and_broadcast(
+                    notification_args={
+                        "source": "github",
+                        "event_name": "github:pull_request",
+                        "action": action,
+                        "entity_type": "pull_request",
+                        "entity_id":str(pr_number),
+                        "actor_login": author_login,
+                        "title": f"PR {action}: {title}",
+                        "message": f"PR #{pr_number} is {state}",
+                        "extra": {"merged": merged, "head_sha": head_sha},
+                        "raw": pr
+                    },
+                    ws_payload=payload_ws
+                )
 
 
 
@@ -280,6 +410,34 @@ def lambda_handler(event, context):
                 ))
 
                 print("Issue upserted successfully.")
+
+                payload_ws = {
+                    "event": "github:issue",
+                    "source": "github",
+                    "repo": repo,
+                    "issue_number": issue_number,
+                    "title": title,
+                    "action": action,
+                    "state": state,
+                    "author": author_login,
+                    "timestamp": timestamp.isoformat()
+                }
+
+                notify_and_broadcast(
+                    notification_args={
+                        "source": "github",
+                        "event_name": "github:issue",
+                        "action": action,
+                        "entity_type": "issue",
+                        "entity_id":str(pr_number),
+                        "actor_login": author_login,
+                        "title": f"Issue {action}: {title}",
+                        "message": body_text,
+                        "raw": issue
+                    },
+                    ws_payload=payload_ws
+                )
+
 
 
             elif github_event == "issue_comment":

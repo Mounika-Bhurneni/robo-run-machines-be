@@ -77,76 +77,69 @@ def lambda_handler(event, context):
         # ================================================================
         cur.execute("""
             SELECT
-                type,
-                title,
-                description,
-                author,
-                project_name,
-                timestamp
-            FROM (
-                SELECT
-                    'ISSUE' AS type,
-                    issue_key AS title,
-                    LEFT(raw->'fields'->>'summary', 120) AS description,
-                    assignee_name AS author,
-                    raw->'fields'->'project'->>'name' AS project_name,
-                    updated_at::timestamptz AS timestamp
-                FROM jira_issues
+                ji.issue_key                                   AS jira_ticket_id,
+                ji.raw->'fields'->>'summary'                   AS jira_title,
+                ji.status                                      AS jira_status,
+                ji.assignee_name                               AS assignee,
+                ji.priority                                    AS priority,
+                ji.story_points                                AS story_points,
 
-                UNION ALL
+                COUNT(DISTINCT pr.id)                          AS pr_linked,
+                COUNT(DISTINCT gc.id)                          AS commit_count,
 
-                SELECT
-                    'SPRINT',
-                    name,
-                    state,
-                    author_login,
-                    raw->'project'->>'name',
-                    timestamp::timestamptz
-                FROM jira_sprints
+                GREATEST(
+                    ji.updated_at,
+                    MAX(pr.timestamp),
+                    MAX(gc.timestamp)
+                )                                              AS last_activity_time
 
-                UNION ALL
+            FROM jira_issues ji
 
-                SELECT
-                    'SUBTASK',
-                    summary,
-                    status,
-                    author_login,
-                    raw->'fields'->'project'->>'name',
-                    timestamp::timestamptz
-                FROM jira_subtasks
+            /* 🔗 PRs linked via Jira key in PR title */
+            LEFT JOIN pull_requests pr
+                ON pr.title ILIKE '%' || ji.issue_key || '%'
 
-                UNION ALL
+            /* 🔗 Commits linked via Jira key in commit message */
+            LEFT JOIN git_commits gc
+                ON gc.message ILIKE '%' || ji.issue_key || '%'
 
-                SELECT
-                    'COMMENT',
-                    CONCAT('Comment on Issue ', issue_id),
-                    LEFT(comment_body, 120),
-                    author_login,
-                    raw->'fields'->'project'->>'name',
-                    timestamp::timestamptz
-                FROM jira_issue_comments
-            ) activities
-            ORDER BY timestamp DESC
+            GROUP BY
+                ji.issue_key,
+                ji.raw->'fields'->>'summary',
+                ji.status,
+                ji.assignee_name,
+                ji.priority,
+                ji.story_points,
+                ji.updated_at
+
+            ORDER BY last_activity_time DESC
             LIMIT 30;
+
 
 
         """)
 
+
        
         rows = cur.fetchall()
-        activities = []
-        for row in rows:
-            ts = row[5]   # 👈 THIS is the timestamp column
+        tickets = []
 
-            activities.append({
-                "type": row[0],
-                "title": row[1],
-                "description": row[2],
-                "author": row[3],
-                "project_name": row[4],
-                "timestamp": ts,
-                "time_ago": time_ago(ts) if ts else None
+        for row in rows:
+            last_ts = row[8]
+
+            tickets.append({
+                "jira_ticket_id": row[0],
+                "jira_title": row[1],
+                "jira_status": row[2],
+                "assignee": row[3],
+                "priority": row[4],
+                "story_points": float(row[5]) if row[5] is not None else None,
+                "pr_linked": row[6],
+                "commit_count": row[7],
+                "last_activity_time": last_ts,
+                "time_ago": time_ago(last_ts) if last_ts else None
             })
+
 
 
         cur.close()
@@ -155,7 +148,7 @@ def lambda_handler(event, context):
         return {
             "statusCode": 200,
             "body": json.dumps(
-                {"jira_recent_activities": activities},
+                {"jira_recent_activities": tickets},
                 default=str,
                 indent=2
             )

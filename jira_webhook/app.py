@@ -11,6 +11,94 @@ from requests.auth import HTTPBasicAuth
 
 import boto3
 
+def insert_notification(
+    *,
+    source,
+    event_name,
+    action=None,
+    org_id=None,
+    project_id=None,
+    project_name=None,
+    board_id=None,
+    board_name=None,
+    entity_type=None,
+    entity_id=None,
+    entity_key=None,
+    parent_entity_id=None,
+    actor_email=None,
+    actor_login=None,
+    title=None,
+    message,
+    extra=None,
+    raw
+):
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+
+        sql = """
+            INSERT INTO notifications (
+                source,
+                event_name,
+                action,
+                org_id,
+                project_id,
+                project_name,
+                board_id,
+                board_name,
+                entity_type,
+                entity_id,
+                entity_key,
+                parent_entity_id,
+                actor_login,
+                actor_email,
+                title,
+                message,
+                extra,
+                raw
+            )
+            VALUES (
+                %s, %s, %s,
+                %s, %s, %s,
+                %s, %s,
+                %s, %s, %s, %s,
+                %s, %s,
+                %s, %s,
+                %s, %s
+            )
+            ON CONFLICT (source, event_name, entity_id, action)
+            DO NOTHING
+        """
+
+        cur.execute(sql, (
+            source,
+            event_name,
+            action,
+            org_id,
+            project_id,
+            project_name,
+            board_id,
+            board_name,
+            entity_type,
+            entity_id,
+            entity_key,
+            parent_entity_id,
+            actor_login,
+            actor_email,
+            title,
+            message,
+            json.dumps(extra) if extra else None,
+            json.dumps(raw)
+        ))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+    except Exception as e:
+        print("❌ Notification insert failed:", str(e))
+
+
 def get_board_name(board_id):
     if not board_id:
         return None
@@ -364,6 +452,29 @@ def handle_issue_created(issue):
             "reporter": reporter_name
         }
         broadcast_to_all(payload)
+        insert_notification(
+            source="jira",
+            event_name="jira:issue_created",
+            action="created",
+            org_id=org_id,
+            project_id=project_id,
+            project_name=project_name,
+            board_id=board_id,
+            board_name=board_name,
+            entity_type="issue",
+            entity_id=str(issue.get("id")),
+            entity_key=issue.get("key"),
+            actor_email=reporter_email,
+            title=f"Issue {issue.get('key')} created",
+            message=fields.get("summary"),
+            extra={
+                "status": status,
+                "priority": priority,
+                "story_points": story_points
+            },
+            raw=issue
+        )
+
 
     except Exception as e:
         print("Error in handle_issue_created:", str(e))
@@ -405,6 +516,18 @@ def handle_issue_deleted(issue):
         }
 
         broadcast_to_all(payload)
+        insert_notification(
+            source="jira",
+            event_name="jira:issue_deleted",
+            action="deleted",
+            entity_type="issue",
+            entity_id=str(issue.get("id")),
+            entity_key=issue.get("key"),
+            title=f"Issue {issue.get('key')} deleted",
+            message=issue.get("fields", {}).get("summary"),
+            raw=issue
+        )
+
     except Exception as e:
         print("Error in handle_issue_deleted:", str(e))
 
@@ -524,6 +647,27 @@ def handle_sprint_events(event_type, sprint, repo_or_board_id=None, author_login
         }
 
         broadcast_to_all(payload)
+        insert_notification(
+            source="jira",
+            event_name=event_type,
+            action=event_type.replace("sprint_", ""),
+            org_id=org_id,
+            project_id=project_id,
+            project_name=project_name,
+            board_id=board_id,
+            board_name=board_name,
+            entity_type="sprint",
+            entity_id=str(sprint.get("id")),
+            actor_email=author_login,
+            title=f"Sprint {event_type.replace('sprint_', '')}",
+            message=sprint.get("name"),
+            extra={
+                "state": sprint.get("state"),
+                "goal": sprint.get("goal")
+            },
+            raw=sprint
+        )
+
 
     except Exception as e:
         print(f"Error recording sprint event '{event_type}':", str(e))
@@ -566,10 +710,41 @@ def handle_comment_events(event_type, issue, comment, board_id=None, author_logi
         conn.commit()
         cur.close()
         conn.close()
+
         print(f"Comment event '{event_type}' recorded successfully.")
 
+        # 🔔 Store notification
+        insert_notification(
+            source="jira",
+            event_name=event_type,
+            action=event_type.replace("comment_", ""),
+            entity_type="comment",
+            entity_id=str(comment.get("id")),
+            parent_entity_id=str(issue.get("id")),
+            actor_email=author_login,
+            title=f"Comment {event_type.replace('comment_', '')}",
+            message=comment.get("body"),
+            raw=comment
+        )
+
+        # 📡 Broadcast to WebSocket clients
+        ws_payload = {
+            "event": event_type,
+            "source": "jira",
+            "entity_type": "comment",
+            "comment_id": comment.get("id"),
+            "issue_id": issue.get("id"),
+            "issue_key": issue.get("key"),
+            "board_id": board_id,
+            "author": author_login,
+            "message": comment.get("body"),
+            "timestamp": timestamp.isoformat()
+        }
+
+        broadcast_to_all(ws_payload)
+
     except Exception as e:
-        print(f"Error recording comment event '{event_type}':", str(e))
+        print(f"❌ Error recording comment event '{event_type}':", str(e))
 
 
 # ==========================================================
@@ -776,6 +951,24 @@ def handle_subtask_events(event_type, issue, board_id=None, author_login=None):
         }
 
         broadcast_to_all(payload)
+        insert_notification(
+            source="jira",
+            event_name=event_type,
+            action=event_type.replace("subtask_", ""),
+            project_id=project_id,
+            project_name=project_name,
+            board_id=board_id,
+            board_name=board_name,
+            entity_type="subtask",
+            entity_id=str(subtask_id),
+            parent_entity_id=str(parent_issue_id),
+            actor_email=author_login,
+            title=f"Subtask {event_type.replace('subtask_', '')}",
+            message=summary,
+            extra={"status": status},
+            raw=issue
+        )
+
 
     except Exception as e:
         print(f"Error recording subtask event '{event_type}':", str(e))
