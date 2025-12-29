@@ -26,71 +26,87 @@ def trend_arrow(current, previous):
     return "stable"
 
 # ==========================
-# Main Lambda
+# Lambda Handler
 # ==========================
 def lambda_handler(event, context):
-    params = event.get("queryStringParameters") or {}
-    window_days = int(params.get("window_days", 7))
+
+    # thresholds
+    WINDOW_DAYS = int(os.environ.get("WINDOW_DAYS", 7))
+    AT_RISK_DAYS = int(os.environ.get("AT_RISK_DAYS", 7))
+    HIGH_PRIORITY_DAYS = int(os.environ.get("HIGH_PRIORITY_DAYS", 5))
+    PR_STUCK_HOURS = int(os.environ.get("PR_STUCK_HOURS", 72))
 
     now = datetime.utcnow()
-    start_current = now - timedelta(days=window_days)
-    start_previous = start_current - timedelta(days=window_days)
+
+    current_start = now - timedelta(days=WINDOW_DAYS)
+    previous_start = now - timedelta(days=WINDOW_DAYS * 2)
 
     conn = get_connection()
     cur = conn.cursor()
 
-    # --------------------------
+    # ==========================
     # CURRENT WINDOW
-    # --------------------------
+    # ==========================
 
-    # w: stale jira issues
+    # At-Risk Jira
     cur.execute("""
         SELECT COUNT(*)
         FROM jira_issues
         WHERE status NOT IN ('Done','Closed','Resolved')
           AND updated_at < %s
-    """, (start_current,))
-    w = cur.fetchone()[0]
+    """, (now - timedelta(days=AT_RISK_DAYS),))
+    at_risk_current = cur.fetchone()[0]
 
-    # x: high priority delayed
+    # High Priority – Past Due
     cur.execute("""
         SELECT COUNT(*)
         FROM jira_issues
         WHERE priority IN ('High','Critical')
           AND status NOT IN ('Done','Closed','Resolved')
-    """)
-    x = cur.fetchone()[0]
+          AND updated_at < %s
+    """, (now - timedelta(days=HIGH_PRIORITY_DAYS),))
+    high_priority_current = cur.fetchone()[0]
 
-    # y: stuck PRs
+    # PRs Stuck (USE timestamp, NOT updated_at)
     cur.execute("""
         SELECT COUNT(*)
         FROM pull_requests
         WHERE state = 'open'
           AND merged = false
           AND timestamp < %s
-    """, (start_current,))
-    y = cur.fetchone()[0]
+    """, (now - timedelta(hours=PR_STUCK_HOURS),))
+    prs_stuck_current = cur.fetchone()[0]
 
-    # z: critical incidents
+    # Critical Incidents (current window)
     cur.execute("""
         SELECT COUNT(*)
         FROM servicenow_incidents
         WHERE severity IN ('High','Critical')
           AND state NOT IN ('Resolved','Closed')
-    """)
-    z = cur.fetchone()[0]
+          AND created_at >= %s
+    """, (current_start,))
+    incidents_current = cur.fetchone()[0]
 
-    # --------------------------
+    # ==========================
     # PREVIOUS WINDOW
-    # --------------------------
+    # ==========================
 
     cur.execute("""
         SELECT COUNT(*)
         FROM jira_issues
         WHERE status NOT IN ('Done','Closed','Resolved')
           AND updated_at < %s
-    """, (start_previous,))
-    w_prev = cur.fetchone()[0]
+    """, (current_start - timedelta(days=AT_RISK_DAYS),))
+    at_risk_previous = cur.fetchone()[0]
+
+    cur.execute("""
+        SELECT COUNT(*)
+        FROM jira_issues
+        WHERE priority IN ('High','Critical')
+          AND status NOT IN ('Done','Closed','Resolved')
+          AND updated_at < %s
+    """, (current_start - timedelta(days=HIGH_PRIORITY_DAYS),))
+    high_priority_previous = cur.fetchone()[0]
 
     cur.execute("""
         SELECT COUNT(*)
@@ -98,50 +114,40 @@ def lambda_handler(event, context):
         WHERE state = 'open'
           AND merged = false
           AND timestamp < %s
-    """, (start_previous,))
-    y_prev = cur.fetchone()[0]
+    """, (current_start - timedelta(hours=PR_STUCK_HOURS),))
+    prs_stuck_previous = cur.fetchone()[0]
 
     cur.execute("""
         SELECT COUNT(*)
         FROM servicenow_incidents
         WHERE severity IN ('High','Critical')
           AND state NOT IN ('Resolved','Closed')
-    """)
-    z_prev = cur.fetchone()[0]
+          AND created_at BETWEEN %s AND %s
+    """, (previous_start, current_start))
+    incidents_previous = cur.fetchone()[0]
 
     cur.close()
     conn.close()
 
-    # --------------------------
-    # Severity Scores
-    # --------------------------
-    jira_severity = (w * 1) + (x * 2)
-    pr_severity = y * 1.5
-    incident_severity = z * 3
-
-    # --------------------------
-    # Final Response
-    # --------------------------
+    # ==========================
+    # Response
+    # ==========================
     response = {
         "at_risk_jira": {
-            "count": w + x,
-            "severity": jira_severity,
-            "trend": trend_arrow(w + x, w_prev)
+            "count": at_risk_current,
+            "trend": trend_arrow(at_risk_current, at_risk_previous)
         },
         "high_priority_delayed": {
-            "count": x,
-            "severity": x * 2,
-            "trend": trend_arrow(x, x)  # same window
-        },
-        "critical_incidents": {
-            "count": z,
-            "severity": incident_severity,
-            "trend": trend_arrow(z, z_prev)
+            "count": high_priority_current,
+            "trend": trend_arrow(high_priority_current, high_priority_previous)
         },
         "prs_stuck": {
-            "count": y,
-            "severity": pr_severity,
-            "trend": trend_arrow(y, y_prev)
+            "count": prs_stuck_current,
+            "trend": trend_arrow(prs_stuck_current, prs_stuck_previous)
+        },
+        "critical_incidents": {
+            "count": incidents_current,
+            "trend": trend_arrow(incidents_current, incidents_previous)
         }
     }
 
