@@ -989,10 +989,10 @@ Resources:
       MemorySize: 512
       Environment:
         Variables:
-          DB_HOST: !Ref DBHost
-          DB_USER: !Ref DBUser
-          DB_PASSWORD: !Ref DBPassword
-          DB_NAME: !Ref DBName
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
           DB_PORT: "5432"
           WINDOW_DAYS: "7"
           AT_RISK_DAYS: "7"
