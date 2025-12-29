@@ -4,6 +4,86 @@ import psycopg2
 import psycopg2.extras
 from datetime import datetime
 import pytz  # make sure this is installed
+import re
+
+JIRA_REGEX = re.compile(r"\b[A-Z][A-Z0-9]+-\d+\b")
+
+def extract_jira_ticket(message):
+    if not message:
+        return None
+    match = JIRA_REGEX.search(message)
+    return match.group(0) if match else None
+
+
+def infer_commit_type(message):
+    if not message:
+        return "Other"
+
+    msg = message.lower()
+
+    if any(k in msg for k in ["fix", "bug", "hotfix", "patch"]):
+        return "Bugfix"
+    if any(k in msg for k in ["feat", "feature", "add", "implement"]):
+        return "Feature"
+    if any(k in msg for k in ["refactor", "cleanup", "optimize"]):
+        return "Refactor"
+    if any(k in msg for k in ["test", "spec", "coverage"]):
+        return "Test"
+
+    return "Other"
+
+
+def commit_message_quality(message):
+    if not message:
+        return "Needs Improvement"
+
+    words = message.strip().split()
+
+    if len(words) < 4:
+        return "Needs Improvement"
+
+    if message[0].islower():
+        return "Needs Improvement"
+
+    return "Clear"
+
+
+def is_pr_linked(commit_sha, pull_requests):
+    return any(pr.get("raw", {}).get("head", {}).get("sha") == commit_sha
+               for pr in pull_requests)
+
+
+def get_ci_status(raw):
+    return raw.get("ci_status", "unknown")
+
+def get_cd_status(raw):
+    return raw.get("cd_status", "unknown")
+
+
+def build_commit_cards(commits, pull_requests):
+    cards = []
+
+    for c in commits:
+        msg = c.get("message")
+
+        cards.append({
+            "commit_id": c.get("commit_sha"),
+            "timestamp": c.get("timestamp"),
+            "author": c.get("author_email"),
+            "commit_message": msg,
+            "jira_ticket_id": extract_jira_ticket(msg),
+            "branch_name": c.get("raw", {}).get("ref"),
+            "pr_linked": is_pr_linked(c.get("commit_sha"), pull_requests),
+            "ci_status": get_ci_status(c.get("raw", {})),
+            "cd_status": get_cd_status(c.get("raw", {})),
+            "derived_intelligence": {
+                "commit_type": infer_commit_type(msg),
+                "commit_message_quality": commit_message_quality(msg)
+            }
+        })
+
+    return cards
+
 
 from datetime import datetime, date, timezone
 
@@ -282,10 +362,17 @@ def lambda_handler(event, context):
         # Sort all events DESC by timestamp
         all_events = sorted(all_events, key=lambda x: x.get("timestamp"), reverse=True)
 
+        commit_cards = build_commit_cards(
+            fetch_github_events(cursor, from_date, to_date),
+            fetch_pull_requests(cursor, from_date, to_date)
+        )
+
+
         cursor.close()
         conn.close()
+        return success("Current work snapshot", commit_cards)
 
-        return success("Recent activity fetched successfully", all_events)
+        # return success("Recent activity fetched successfully", all_events)
 
     except Exception as e:
         print("ERROR:", str(e))
