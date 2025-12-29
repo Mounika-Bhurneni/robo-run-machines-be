@@ -969,11 +969,6 @@ Resources:
           UNDERLOAD_THRESHOLD_PERCENT: "80.0"
           DEFAULT_COMMIT_DAYS: "7"
 
-
-
-
-
-
   
   CurrentSprintCommitsFunction:
     Type: AWS::Serverless::Function
@@ -1011,6 +1006,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: ai_chat_assistant_function
+      FunctionName: !Sub "${AWS::StackName}-ai-chat-assistant"
       CodeUri: ai_chat_assistant/
       Handler: app.lambda_handler
       Runtime: python3.10
@@ -1036,7 +1032,7 @@ Resources:
   AiSummaryRecommendationsFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: ai_summary_recommendations_function
+      FunctionName: !Sub "${AWS::StackName}-ai-summary-recommendations"
       CodeUri: ai_summary_recommendations/
       Handler: app.lambda_handler
       Runtime: python3.10
