@@ -930,46 +930,6 @@ Resources:
           DB_PASSWORD: !Ref ParamDBPassword
           DB_NAME: !Ref ParamDBName
 
-
-
-  WorkloadAnalyticsFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName: !Sub "${AWS::StackName}-workload-analytics"
-      CodeUri: workload_analytics/
-      Handler: app.lambda_handler
-      Runtime: python3.10
-      Timeout: 30
-      MemorySize: 512
-      Layers: [!Ref MyLibLayer]
-      Events:
-        WorkloadGet:
-          Type: HttpApi
-          Properties:
-            Path: /analytics/workload
-            Method: get
-            ApiId: !Ref HttpApi
-      Environment:
-        Variables:
-          DB_HOST: !Ref ParamDBHost
-          DB_USER: !Ref ParamDBUser
-          DB_PASSWORD: !Ref ParamDBPassword
-          DB_NAME: !Ref ParamDBName
-          DB_PORT: !Ref ParamDBPort
-          DEFAULT_CAPACITY: "8"
-          CAP_DEV: "8"
-          CAP_QA: "6"
-          CAP_MANAGER: "5"
-          CAP_DEV_MANAGER: "6"
-          WEIGHT_ISSUE: "1.0"
-          WEIGHT_SUBTASK: "0.5"
-          WEIGHT_PR: "0.8"
-          WEIGHT_COMMIT: "0.1"
-          HIGH_PRIORITY_MULTIPLIER: "1.5"
-          UNDERLOAD_THRESHOLD_PERCENT: "80.0"
-          DEFAULT_COMMIT_DAYS: "7"
-
-
   
   CurrentSprintCommitsFunction:
     Type: AWS::Serverless::Function
