@@ -2,6 +2,15 @@ import json
 import os
 import psycopg2
 from datetime import datetime, timedelta
+import re
+
+
+def normalize_email_for_login(email: str) -> str:
+    """
+    krishna.mayekar@aithinkers.com → krishnamayekar
+    """
+    local = email.split("@")[0]
+    return re.sub(r"[^a-z0-9]", "", local.lower())
 
 
 # ==========================================================
@@ -12,67 +21,57 @@ def percent_change(current, previous):
         value = 100 if current > 0 else 0
     else:
         value = round(((current - previous) / previous) * 100, 2)
-
-    # format with sign
     return f"{value:+.2f}%"
-
 
 
 # ==========================================================
 # PostgreSQL Connection
 # ==========================================================
 def get_connection():
-    try:
-        conn = psycopg2.connect(
-            host=os.environ["DB_HOST"],
-            user=os.environ["DB_USER"],
-            password=os.environ["DB_PASSWORD"],
-            dbname=os.environ["DB_NAME"],
-            port=5432
-        )
-        conn.autocommit = True   # ✅ add this
-        return conn
-    except Exception as e:
-        print("DB Connection Error:", str(e))
-        raise
-
+    conn = psycopg2.connect(
+        host=os.environ["DB_HOST"],
+        user=os.environ["DB_USER"],
+        password=os.environ["DB_PASSWORD"],
+        dbname=os.environ["DB_NAME"],
+        port=5432
+    )
+    conn.autocommit = True
+    return conn
 
 
 # ==========================================================
 # Lambda Handler
 # ==========================================================
 def lambda_handler(event, context):
-    print("Incoming Event:", json.dumps(event))
+    params = event.get("queryStringParameters") or {}
 
-    try:
-        params = event.get("queryStringParameters") or {}
-        org_id = params.get("org_id")
-        user_id = params.get("user_id")
+    org_id = params.get("org_id")
+    user_id = params.get("user_id")
+    email = params.get("email")
 
-        insights = get_team_insights(org_id=org_id, user_id=user_id)
+    insights = get_team_insights(
+        org_id=org_id,
+        user_id=user_id,
+        email=email
+    )
 
-        return {
-            "statusCode": 200,
-            "body": json.dumps(insights,indent=2)
-        }
-
-    except Exception as e:
-        print("Error:", str(e))
-        return {
-            "statusCode": 500,
-            "body": json.dumps({"error": "Internal server error"})
-        }
+    return {
+        "statusCode": 200,
+        "body": json.dumps(insights, indent=2)
+    }
 
 
 # ==========================================================
 # TEAM INSIGHTS LOGIC
 # ==========================================================
-def get_team_insights(org_id=None, user_id=None):
+def get_team_insights(org_id=None, user_id=None, email=None):
     conn = get_connection()
     cur = conn.cursor()
 
     filters = []
     values = []
+
+    login_key = normalize_email_for_login(email) if email else None
 
     if org_id:
         filters.append("org_id = %s")
@@ -81,6 +80,10 @@ def get_team_insights(org_id=None, user_id=None):
     if user_id:
         filters.append("assignee_user_id = %s")
         values.append(user_id)
+
+    if email:
+        filters.append("assignee_email = %s")
+        values.append(email)
 
     where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
 
@@ -94,7 +97,7 @@ def get_team_insights(org_id=None, user_id=None):
         FROM jira_issues
         {where_clause}
         GROUP BY assignee_name
-        ORDER BY COUNT(*) DESC;
+        ORDER BY COUNT(*) DESC
     """, values)
 
     insights["issues_per_user"] = [
@@ -102,7 +105,7 @@ def get_team_insights(org_id=None, user_id=None):
     ]
 
     # ==========================================================
-    # 2. ISSUES COMPLETED TODAY
+    # 2. COMPLETED TODAY
     # ==========================================================
     today = datetime.utcnow().date()
 
@@ -110,9 +113,9 @@ def get_team_insights(org_id=None, user_id=None):
         SELECT assignee_name, COUNT(*)
         FROM jira_issues
         {where_clause + (" AND" if where_clause else "WHERE")}
-            status IN ('Done','Closed','Resolved')
-            AND DATE(updated_at) = %s
-        GROUP BY assignee_name;
+        status IN ('Done','Closed','Resolved')
+        AND DATE(updated_at) = %s
+        GROUP BY assignee_name
     """, values + [today])
 
     insights["completed_today"] = [
@@ -120,7 +123,7 @@ def get_team_insights(org_id=None, user_id=None):
     ]
 
     # ==========================================================
-    # 3. ISSUES COMPLETED THIS WEEK
+    # 3. COMPLETED THIS WEEK
     # ==========================================================
     start_week = today - timedelta(days=today.weekday())
 
@@ -128,9 +131,9 @@ def get_team_insights(org_id=None, user_id=None):
         SELECT assignee_name, COUNT(*)
         FROM jira_issues
         {where_clause + (" AND" if where_clause else "WHERE")}
-            status IN ('Done','Closed','Resolved')
-            AND DATE(updated_at) >= %s
-        GROUP BY assignee_name;
+        status IN ('Done','Closed','Resolved')
+        AND DATE(updated_at) >= %s
+        GROUP BY assignee_name
     """, values + [start_week])
 
     insights["completed_week"] = [
@@ -145,68 +148,57 @@ def get_team_insights(org_id=None, user_id=None):
             SUM(CASE WHEN status IN ('Done','Closed','Resolved') THEN 1 ELSE 0 END),
             SUM(CASE WHEN status NOT IN ('Done','Closed','Resolved') THEN 1 ELSE 0 END)
         FROM jira_issues
-        {where_clause};
+        {where_clause}
     """, values)
 
-    row = cur.fetchone()
+    completed, pending = cur.fetchone()
     insights["pending_vs_completed"] = {
-        "completed": row[0] or 0,
-        "pending": row[1] or 0
+        "completed": completed or 0,
+        "pending": pending or 0
     }
 
     # ==========================================================
-    # 5. ACTIVE USERS BASED ON COMMENTS
+    # 5. ACTIVE USERS (COMMENTS)
     # ==========================================================
-    cur.execute("""
-        SELECT author_login, COUNT(*)
-        FROM jira_issue_comments
-        GROUP BY author_login
-        ORDER BY COUNT(*) DESC
-        LIMIT 10;
-    """)
+    if email:
+        cur.execute("""
+            SELECT author_login, COUNT(*)
+            FROM jira_issue_comments
+            WHERE lower(author_login) LIKE %s
+            GROUP BY author_login
+            ORDER BY COUNT(*) DESC
+        """, [f"%{login_key}%"])
+    else:
+        cur.execute("""
+            SELECT author_login, COUNT(*)
+            FROM jira_issue_comments
+            GROUP BY author_login
+            ORDER BY COUNT(*) DESC
+            LIMIT 10
+        """)
 
     insights["top_active_users"] = [
         {"user": r[0], "comments": r[1]} for r in cur.fetchall()
     ]
 
     # ==========================================================
-    # 7. AVERAGE RESOLUTION TIME
+    # 6. TEAM METRICS SUMMARY
     # ==========================================================
-    try:
-        cur.execute(f"""
-            SELECT AVG(
-                EXTRACT(
-                    EPOCH FROM (
-                        updated_at -
-                        TO_TIMESTAMP(raw::json->'fields'->>'created',
-                        'YYYY-MM-DD"T"HH24:MI:SS"Z"')
-                    )
-                )
-            )
-            FROM jira_issues
-            {where_clause}
-            AND status IN ('Done','Closed','Resolved');
-        """, values)
-
-        avg_secs = cur.fetchone()[0]
-        insights["avg_resolution_time_hours"] = round(avg_secs / 3600, 2) if avg_secs else 0
-    except:
-        insights["avg_resolution_time_hours"] = 0
-
-    # ==========================================================
-    # 8. TEAM METRICS SUMMARY (NO sprint_id dependency)
-    # ==========================================================
-
-    # ---- Time windows ----
     now = datetime.utcnow()
     curr_start = now - timedelta(days=14)
     prev_start = now - timedelta(days=28)
 
-    # TOTAL JIRA TICKETS
-    cur.execute("""
-        SELECT COUNT(*) FROM jira_issues
-        WHERE updated_at >= %s
-    """, [curr_start])
+    # Jira counts
+    if email:
+        cur.execute("""
+            SELECT COUNT(*) FROM jira_issues
+            WHERE updated_at >= %s AND assignee_email = %s
+        """, [curr_start, email])
+    else:
+        cur.execute("""
+            SELECT COUNT(*) FROM jira_issues
+            WHERE updated_at >= %s
+        """, [curr_start])
     curr_tickets = cur.fetchone()[0]
 
     cur.execute("""
@@ -215,68 +207,38 @@ def get_team_insights(org_id=None, user_id=None):
     """, [prev_start, curr_start])
     prev_tickets = cur.fetchone()[0]
 
-    # COMMITS & PRs
-    # COMMITS & PRs
-    try:
+    # Commits
+    if email:
+        cur.execute("""
+            SELECT COUNT(*) FROM git_commits
+            WHERE timestamp >= %s
+            AND author_email = %s
+        """, [curr_start, email])
+    else:
         cur.execute("""
             SELECT COUNT(*) FROM git_commits
             WHERE timestamp >= %s
         """, [curr_start])
-        curr_commits = cur.fetchone()[0]
-    except Exception as e:
-        print("git_commits current failed:", e)
-        curr_commits = 0
 
-    try:
-        cur.execute("""
-            SELECT COUNT(*) FROM git_commits
-            WHERE timestamp BETWEEN %s AND %s
-        """, [prev_start, curr_start])
-        prev_commits = cur.fetchone()[0]
-    except Exception as e:
-        print("git_commits previous failed:", e)
-        prev_commits = 0
-
-
-    # HIGH PRIORITY INACTIVE
-    cur.execute("""
-        SELECT COUNT(*) FROM jira_issues
-        WHERE priority IN ('High','Highest')
-        AND status NOT IN ('Done','Closed','Resolved')
-    """)
-    curr_high_inactive = cur.fetchone()[0]
+    curr_commits = cur.fetchone()[0]
 
     cur.execute("""
-        SELECT COUNT(*) FROM jira_issues
-        WHERE priority IN ('High','Highest')
-        AND status NOT IN ('Done','Closed','Resolved')
-        AND updated_at < %s
-    """, [curr_start])
-    prev_high_inactive = cur.fetchone()[0]
-
+        SELECT COUNT(*) FROM git_commits
+        WHERE timestamp BETWEEN %s AND %s
+    """, [prev_start, curr_start])
+    prev_commits = cur.fetchone()[0]
 
     insights["team_metrics_summary"] = {
         "total_jira_tickets": {
             "count": curr_tickets,
-            "delta_percent": percent_change(curr_tickets, prev_tickets),
-            "comparison": "vs last 14 days"
+            "delta_percent": percent_change(curr_tickets, prev_tickets)
         },
         "commits_prs": {
             "count": curr_commits,
-            "delta_percent": percent_change(curr_commits, prev_commits),
-            "comparison": "vs last 14 days"
-        },
-        "high_priority_inactive": {
-            "count": curr_high_inactive,
-            "delta_percent": f"-{abs(float(percent_change(curr_high_inactive, prev_high_inactive).replace('%',''))):.2f}%",
-            "comparison": "improvement"
-        },
+            "delta_percent": percent_change(curr_commits, prev_commits)
+        }
     }
 
-    # ==========================================================
-    # CLEANUP
-    # ==========================================================
     cur.close()
     conn.close()
-
     return insights
