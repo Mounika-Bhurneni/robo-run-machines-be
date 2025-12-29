@@ -1005,7 +1005,6 @@ Resources:
   AiChatAssistantFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: ai_chat_assistant_function
       FunctionName: !Sub "${AWS::StackName}-ai-chat-assistant"
       CodeUri: ai_chat_assistant/
       Handler: app.lambda_handler
