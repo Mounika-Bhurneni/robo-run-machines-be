@@ -68,7 +68,6 @@ def lambda_handler(event, context):
                 title,
                 message,
                 extra,
-                raw,
                 created_at
             FROM notifications
             {where_sql}

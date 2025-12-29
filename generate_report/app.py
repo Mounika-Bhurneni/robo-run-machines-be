@@ -73,7 +73,7 @@ def make_aware(dt):
 # ==========================================================
 # Fetch Jira Issues
 # ==========================================================
-def fetch_jira_issues(cursor, team, from_date, to_date):
+def fetch_jira_issues(cursor, from_date, to_date):
     cursor.execute(
         """
         SELECT id,
@@ -88,12 +88,11 @@ def fetch_jira_issues(cursor, team, from_date, to_date):
                updated_at,
                raw
         FROM jira_issues
-        WHERE org_id = %s
-          AND updated_at >= %s
-          AND updated_at <= %s
+        WHERE updated_at >= %s::timestamptz
+          AND updated_at <= %s::timestamptz
         ORDER BY updated_at DESC;
         """,
-        (team, from_date, to_date),
+        (from_date, to_date),
     )
     return cursor.fetchall()
 
@@ -102,7 +101,7 @@ def fetch_jira_issues(cursor, team, from_date, to_date):
 # ==========================================================
 # Fetch GitHub PRs (including merges)
 # ==========================================================
-def fetch_github_prs(cursor, team, from_date, to_date):
+def fetch_github_prs(cursor, from_date, to_date):
     cursor.execute(
         """
         SELECT id,
@@ -118,12 +117,11 @@ def fetch_github_prs(cursor, team, from_date, to_date):
                timestamp,
                raw
         FROM pull_requests
-        WHERE repo = %s
-          AND timestamp >= %s
-          AND timestamp <= %s
+        WHERE timestamp >= %s::timestamptz
+          AND timestamp <= %s::timestamptz
         ORDER BY timestamp DESC;
         """,
-        (team, from_date, to_date),
+        (from_date, to_date),
     )
     return cursor.fetchall()
 
@@ -207,8 +205,9 @@ def lambda_handler(event, context):
         to_date_str = query.get("to_date")
         report_type = query.get("type", "full")  # jira|github|sprints|subtasks|logs|full
 
-        if not team or not from_date_str or not to_date_str:
-            return error(400, "team, from_date, to_date are required")
+        if not from_date_str or not to_date_str:
+         return error(400, "from_date and to_date are required")
+
 
         # Parse query params as UTC-aware datetimes
         from_date = parse_date(from_date_str)
@@ -220,10 +219,11 @@ def lambda_handler(event, context):
         response_data = {}
 
         if report_type in ["jira", "full"]:
-            response_data["jira_issues"] = fetch_jira_issues(cursor, team, from_date, to_date)
+            response_data["jira_issues"] = fetch_jira_issues(cursor, from_date, to_date)
+
 
         if report_type in ["github", "full"]:
-            response_data["github_pull_requests"] = fetch_github_prs(cursor, team, from_date, to_date)
+            response_data["github_pull_requests"] = fetch_github_prs(cursor, from_date, to_date)
 
         if report_type in ["sprints", "full"]:
             response_data["jira_sprint_progress"] = fetch_sprint_progress(cursor, team, from_date, to_date)
