@@ -753,8 +753,6 @@ Resources:
           PR_STUCK_HOURS: "72"
 
 
-
-
   UpdateUserFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -929,10 +927,8 @@ Resources:
           DB_USER: !Ref ParamDBUser
           DB_PASSWORD: !Ref ParamDBPassword
           DB_NAME: !Ref ParamDBName
-<<<<<<< HEAD
 
-=======
->>>>>>> 9ab569c (template.yaml fixes and current_sprint_commits req change)
+  
   
   CurrentSprintCommitsFunction:
     Type: AWS::Serverless::Function
@@ -1018,35 +1014,20 @@ Resources:
           DB_PORT: !Ref ParamDBPort
 
 
-<<<<<<< HEAD
   FetchNotificationsFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: fetch_notifications_function
       CodeUri: fetch_notifications/
-=======
-  SprintInsightsFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName: !Sub "${AWS::StackName}-sprint-insights"
-      CodeUri: sprint_insights/
->>>>>>> 9ab569c (template.yaml fixes and current_sprint_commits req change)
       Handler: app.lambda_handler
       Runtime: python3.10
       Timeout: 30
       MemorySize: 512
       Events:
-<<<<<<< HEAD
         FetchNotifications:
           Type: HttpApi
           Properties:
             Path: /notifications
-=======
-        SprintInsightsGet:
-          Type: HttpApi
-          Properties:
-            Path: /analytics/sprint-insights
->>>>>>> 9ab569c (template.yaml fixes and current_sprint_commits req change)
             Method: GET
             ApiId: !Ref HttpApi
       Environment:
@@ -1058,10 +1039,6 @@ Resources:
           DB_PORT: !Ref ParamDBPort
 
 
-<<<<<<< HEAD
-=======
-
->>>>>>> 9ab569c (template.yaml fixes and current_sprint_commits req change)
 Outputs:
   HttpApiUrl:
     Description: "Base URL for the HTTP API"
