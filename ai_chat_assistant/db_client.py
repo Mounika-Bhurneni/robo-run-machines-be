@@ -13,7 +13,7 @@ def run_safe_query(sql):
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
         cur.execute(sql)
-        return cur.fetchall()[:10]
+        return cur.fetchall()
     finally:
         cur.close()
         conn.close()

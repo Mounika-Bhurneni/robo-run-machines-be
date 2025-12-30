@@ -19,7 +19,7 @@ DB_QUERY_REGISTRY = {
     """,
 
     "jira_assignee_status_breakdown": """
-        SELECT assignee_user_id, status, COUNT(*) AS count
+        SELECT assignee_name, status, COUNT(*) AS count
         FROM jira_issues
         WHERE assignee_user_id IS NOT NULL
         GROUP BY assignee_user_id, status
@@ -28,7 +28,7 @@ DB_QUERY_REGISTRY = {
     """,
 
     "jira_assignee_priority_breakdown": """
-        SELECT assignee_user_id, priority, COUNT(*) AS count
+        SELECT assignee_name, priority, COUNT(*) AS count
         FROM jira_issues
         WHERE assignee_user_id IS NOT NULL
         GROUP BY assignee_user_id, priority
@@ -41,7 +41,7 @@ DB_QUERY_REGISTRY = {
     # ==================================================
 
     "stale_jira_issues": """
-        SELECT issue_key, assignee_user_id, priority, status, updated_at
+        SELECT issue_key, assignee_name, priority, status, updated_at
         FROM jira_issues
         WHERE updated_at < NOW() - INTERVAL '7 days'
           AND status NOT IN ('Done', 'Closed')
@@ -50,7 +50,7 @@ DB_QUERY_REGISTRY = {
     """,
 
     "high_priority_open_jira": """
-        SELECT issue_key, assignee_user_id, status, updated_at
+        SELECT issue_key, assignee_name, status, updated_at
         FROM jira_issues
         WHERE priority = 'High'
           AND status NOT IN ('Done', 'Closed')
