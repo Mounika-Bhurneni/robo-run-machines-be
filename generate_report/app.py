@@ -73,7 +73,7 @@ def make_aware(dt):
 # ==========================================================
 # Fetch Jira Issues
 # ==========================================================
-def fetch_jira_issues(cursor, team, from_date, to_date):
+def fetch_jira_issues(cursor, from_date, to_date):
     cursor.execute(
         """
         SELECT id,
@@ -85,15 +85,13 @@ def fetch_jira_issues(cursor, team, from_date, to_date):
                reporter_name,
                assignee_email,
                reporter_email,
-               updated_at,
-               raw
+               updated_at
         FROM jira_issues
-        WHERE org_id = %s
-          AND updated_at >= %s
-          AND updated_at <= %s
+        WHERE updated_at >= %s::timestamptz
+          AND updated_at <= %s::timestamptz
         ORDER BY updated_at DESC;
         """,
-        (team, from_date, to_date),
+        (from_date, to_date),
     )
     return cursor.fetchall()
 
@@ -102,7 +100,7 @@ def fetch_jira_issues(cursor, team, from_date, to_date):
 # ==========================================================
 # Fetch GitHub PRs (including merges)
 # ==========================================================
-def fetch_github_prs(cursor, team, from_date, to_date):
+def fetch_github_prs(cursor, from_date, to_date):
     cursor.execute(
         """
         SELECT id,
@@ -115,15 +113,14 @@ def fetch_github_prs(cursor, team, from_date, to_date):
                author_login,
                head_sha,
                merged,
-               timestamp,
-               raw
+               timestamp
+               
         FROM pull_requests
-        WHERE repo = %s
-          AND timestamp >= %s
-          AND timestamp <= %s
+        WHERE timestamp >= %s::timestamptz
+          AND timestamp <= %s::timestamptz
         ORDER BY timestamp DESC;
         """,
-        (team, from_date, to_date),
+        (from_date, to_date),
     )
     return cursor.fetchall()
 
@@ -137,7 +134,7 @@ def fetch_sprint_progress(cursor, team, from_date, to_date):
         """
         SELECT id, sprint_id, repo_or_board_id, name, state,
                start_date, end_date, goal, event_type,
-               author_login, timestamp, raw
+               author_login, timestamp
         FROM jira_sprints
         WHERE timestamp >= %s
           AND timestamp <= %s
@@ -156,7 +153,7 @@ def fetch_jira_subtasks(cursor, team, from_date, to_date):
         """
         SELECT id, subtask_id, parent_issue_id, board_id,
                summary, status, event_type, author_login,
-               timestamp, raw
+               timestamp
         FROM jira_subtasks
         WHERE timestamp >= %s
           AND timestamp <= %s
@@ -207,8 +204,9 @@ def lambda_handler(event, context):
         to_date_str = query.get("to_date")
         report_type = query.get("type", "full")  # jira|github|sprints|subtasks|logs|full
 
-        if not team or not from_date_str or not to_date_str:
-            return error(400, "team, from_date, to_date are required")
+        if not from_date_str or not to_date_str:
+         return error(400, "from_date and to_date are required")
+
 
         # Parse query params as UTC-aware datetimes
         from_date = parse_date(from_date_str)
@@ -220,10 +218,11 @@ def lambda_handler(event, context):
         response_data = {}
 
         if report_type in ["jira", "full"]:
-            response_data["jira_issues"] = fetch_jira_issues(cursor, team, from_date, to_date)
+            response_data["jira_issues"] = fetch_jira_issues(cursor, from_date, to_date)
+
 
         if report_type in ["github", "full"]:
-            response_data["github_pull_requests"] = fetch_github_prs(cursor, team, from_date, to_date)
+            response_data["github_pull_requests"] = fetch_github_prs(cursor, from_date, to_date)
 
         if report_type in ["sprints", "full"]:
             response_data["jira_sprint_progress"] = fetch_sprint_progress(cursor, team, from_date, to_date)

@@ -157,12 +157,39 @@ def get_team_insights(org_id=None, user_id=None, email=None):
 
     # Jira counts
     if email:
-        cur.execute("SELECT COUNT(*) FROM jira_issues WHERE updated_at >= %s AND assignee_email = %s", [curr_start, email])
+        cur.execute("""
+            SELECT COUNT(*)
+            FROM jira_issues
+            WHERE updated_at >= %s
+            AND assignee_email = %s
+            AND COALESCE(
+                    (raw->'fields'->'issuetype'->>'subtask')::boolean,
+                    false
+                ) = false
+        """, [curr_start, email])
     else:
-        cur.execute("SELECT COUNT(*) FROM jira_issues WHERE updated_at >= %s", [curr_start])
+        cur.execute("""
+            SELECT COUNT(*)
+            FROM jira_issues
+            WHERE updated_at >= %s
+            AND COALESCE(
+                    (raw->'fields'->'issuetype'->>'subtask')::boolean,
+                    false
+                ) = false
+        """, [curr_start])
+
     curr_tickets = cur.fetchone()[0]
 
-    cur.execute("SELECT COUNT(*) FROM jira_issues WHERE updated_at BETWEEN %s AND %s", [prev_start, curr_start])
+    cur.execute("""
+        SELECT COUNT(*)
+        FROM jira_issues
+        WHERE updated_at BETWEEN %s AND %s
+        AND COALESCE(
+                (raw->'fields'->'issuetype'->>'subtask')::boolean,
+                false
+            ) = false
+    """, [prev_start, curr_start])
+
     prev_tickets = cur.fetchone()[0]
 
     # Commits
