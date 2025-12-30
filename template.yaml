@@ -723,7 +723,7 @@ Resources:
           DEFAULT_COMMIT_DAYS: "7"
 
 
-  RiskInsightsFunction:
+  RiskInsightsV2Function:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub "${AWS::StackName}-risk-insights-v2"
