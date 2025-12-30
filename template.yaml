@@ -723,7 +723,43 @@ Resources:
           DEFAULT_COMMIT_DAYS: "7"
 
 
+  RiskInsightsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-risk-insights-v2"
+      CodeUri: risk_insights/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Timeout: 30
+      MemorySize: 512
+      Layers: [!Ref MyLibLayer]
+      Events:
+        RiskInsightsGet:
+          Type: HttpApi
+          Properties:
+            Path: /analytics/risk
+            Method: get
+            ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: CognitoJwt   # MANAGER-only visibility
+      Environment:
+        Variables:
+          DB_HOST: !Ref ParamDBHost
+          DB_USER: !Ref ParamDBUser
+          DB_PASSWORD: !Ref ParamDBPassword
+          DB_NAME: !Ref ParamDBName
+          DB_PORT: !Ref ParamDBPort
 
+          # ---- Risk Configuration ----
+          RISK_WINDOW_DAYS: "7"
+          STALE_JIRA_DAYS: "5"
+          PR_STUCK_DAYS: "5"
+
+          # ---- Severity Weights ----
+          WEIGHT_STALE_JIRA: "1.0"
+          WEIGHT_HIGH_PRIORITY_JIRA: "2.0"
+          WEIGHT_STUCK_PR: "1.5"
+          WEIGHT_CRITICAL_INCIDENT: "3.0"
 
 
   UpdateUserFunction:
