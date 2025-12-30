@@ -85,8 +85,7 @@ def fetch_jira_issues(cursor, from_date, to_date):
                reporter_name,
                assignee_email,
                reporter_email,
-               updated_at,
-               raw
+               updated_at
         FROM jira_issues
         WHERE updated_at >= %s::timestamptz
           AND updated_at <= %s::timestamptz
@@ -114,8 +113,8 @@ def fetch_github_prs(cursor, from_date, to_date):
                author_login,
                head_sha,
                merged,
-               timestamp,
-               raw
+               timestamp
+               
         FROM pull_requests
         WHERE timestamp >= %s::timestamptz
           AND timestamp <= %s::timestamptz
@@ -135,7 +134,7 @@ def fetch_sprint_progress(cursor, team, from_date, to_date):
         """
         SELECT id, sprint_id, repo_or_board_id, name, state,
                start_date, end_date, goal, event_type,
-               author_login, timestamp, raw
+               author_login, timestamp
         FROM jira_sprints
         WHERE timestamp >= %s
           AND timestamp <= %s
@@ -154,7 +153,7 @@ def fetch_jira_subtasks(cursor, team, from_date, to_date):
         """
         SELECT id, subtask_id, parent_issue_id, board_id,
                summary, status, event_type, author_login,
-               timestamp, raw
+               timestamp
         FROM jira_subtasks
         WHERE timestamp >= %s
           AND timestamp <= %s
