@@ -723,10 +723,10 @@ Resources:
           DEFAULT_COMMIT_DAYS: "7"
 
 
-  RiskInsightsFunction:
+  RiskInsightsV2Function:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub "${AWS::StackName}-risk-insights"
+      FunctionName: !Sub "${AWS::StackName}-risk-insights-v2"
       CodeUri: risk_insights/
       Handler: app.lambda_handler
       Runtime: python3.10
@@ -751,7 +751,6 @@ Resources:
           AT_RISK_DAYS: "7"
           HIGH_PRIORITY_DAYS: "5"
           PR_STUCK_HOURS: "72"
-
 
   UpdateUserFunction:
     Type: AWS::Serverless::Function
