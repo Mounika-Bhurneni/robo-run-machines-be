@@ -29,6 +29,7 @@ def lambda_handler(event, context):
 
     
         user_role = claims.get("custom:role")
+        #user_role="DEV"
 
         if not user_role or user_role not in ALLOWED_ROLES:
             return {
