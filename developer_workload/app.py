@@ -17,6 +17,23 @@ def get_connection():
         dbname=DB_NAME
     )
 
+
+def is_high_priority(priority):
+    if not priority:
+        return False
+
+    p = priority.strip().lower()
+
+    return any(keyword in p for keyword in (
+        "highest",
+        "high",
+        "critical",
+        "blocker",
+        "p0",
+        "p1"
+    ))
+
+
 def lambda_handler(event, context):
     conn = get_connection()
     cur = conn.cursor()
@@ -24,23 +41,21 @@ def lambda_handler(event, context):
     # -------------------------
     # Get email from query params (optional)
     # -------------------------
-    email = (
-        event.get("queryStringParameters") or {}
-    ).get("email")
+    email = (event.get("queryStringParameters") or {}).get("email")
 
     # -------------------------
     # Fetch Jira Issues
     # -------------------------
     if email:
         cur.execute("""
-            SELECT assignee_user_id, assignee_name, status, priority, updated_at
+            SELECT assignee_user_id, assignee_name, assignee_email, status, priority, updated_at
             FROM jira_issues
             WHERE assignee_user_id IS NOT NULL
               AND assignee_email = %s
         """, (email,))
     else:
         cur.execute("""
-            SELECT assignee_user_id, assignee_name, status, priority, updated_at
+            SELECT assignee_user_id, assignee_name, assignee_email, status, priority, updated_at
             FROM jira_issues
             WHERE assignee_user_id IS NOT NULL
         """)
@@ -73,10 +88,11 @@ def lambda_handler(event, context):
     # -------------------------
     # Process Issues
     # -------------------------
-    for assignee_id, name, status, priority, updated_at in issues:
+    for assignee_id, name, assignee_email, status, priority, updated_at in issues:
         if assignee_id not in workload:
             workload[assignee_id] = {
                 "name": name,
+                "email": assignee_email,
                 "open_issues": 0,
                 "high_priority_issues": 0,
                 "idle_days_max": 0,
@@ -86,8 +102,13 @@ def lambda_handler(event, context):
         if status.lower() not in ("done", "closed", "resolved"):
             workload[assignee_id]["open_issues"] += 1
 
-        if priority and priority.lower() in ("high", "critical"):
+                # Count HIGH PRIORITY only if issue is still open
+        if (
+            status.lower() not in ("done", "closed", "resolved")
+            and is_high_priority(priority)
+        ):
             workload[assignee_id]["high_priority_issues"] += 1
+
 
         if updated_at:
             if updated_at.tzinfo is None:
@@ -105,6 +126,7 @@ def lambda_handler(event, context):
         if author_login not in workload:
             workload[author_login] = {
                 "name": author_login,
+                "email": author_login,  # Use login as email for now
                 "open_issues": 0,
                 "high_priority_issues": 0,
                 "idle_days_max": 0,
@@ -122,6 +144,7 @@ def lambda_handler(event, context):
         response.append({
             "user_id": user_id,
             "name": metrics["name"],
+            "email": metrics.get("email"),
             "open_issues": metrics["open_issues"],
             "high_priority_issues": metrics["high_priority_issues"],
             "subtasks": metrics["subtasks"],

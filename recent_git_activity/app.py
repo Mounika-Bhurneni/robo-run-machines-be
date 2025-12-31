@@ -65,10 +65,55 @@ def lambda_handler(event, context):
         # ================================================================
         # FETCH RECENT COMMITS (last 20)
         # ================================================================
+                # ================================================================
+        # FETCH RECENT COMMITS (last 20) – DERIVED FIELDS
+        # ================================================================
         cur.execute("""
-            SELECT id, repo, commit_sha, author_email, message, files, timestamp 
-            FROM git_commits 
-            ORDER BY timestamp DESC 
+            SELECT
+                gc.id,
+                gc.repo,
+                gc.commit_sha,
+                gc.author_email AS author,
+                gc.message,
+                gc.timestamp,
+
+                -- Jira Ticket ID (derived from message)
+                substring(gc.message FROM '([A-Z]+-[0-9]+)') AS jira_ticket_id,
+
+                -- PR linked or not
+                CASE
+                    WHEN pr.id IS NOT NULL THEN true
+                    ELSE false
+                END AS pr_linked,
+
+                -- Branch (not stored yet)
+                'UNKNOWN' AS branch,
+
+                -- CI & Deployment (not implemented yet)
+                'UNKNOWN' AS ci_status,
+                'NOT_DEPLOYED' AS deployment_status,
+
+                -- Commit Type (RULE-BASED, DERIVED)
+                CASE
+                    WHEN gc.message ILIKE '%fix%' THEN 'Bugfix'
+                    WHEN gc.message ILIKE '%refactor%' THEN 'Refactor'
+                    WHEN gc.message ILIKE '%test%' THEN 'Test'
+                    ELSE 'Feature'
+                END AS commit_type,
+
+                -- Commit Message Quality Badge
+                CASE
+                    WHEN length(gc.message) >= 20
+                         AND gc.message ~ '[A-Z]+-[0-9]+'
+                    THEN 'Clear'
+                    ELSE 'Needs Improvement'
+                END AS message_quality
+
+            FROM git_commits gc
+            LEFT JOIN pull_requests pr
+                ON pr.head_sha = gc.commit_sha
+
+            ORDER BY gc.timestamp DESC
             LIMIT 20
         """)
         rows = cur.fetchall()

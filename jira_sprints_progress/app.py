@@ -88,25 +88,35 @@ def lambda_handler(event, context):
             ) = sprint
 
             # Compute progress
+            # Compute progress & velocity
+            velocity = None
+            elapsed_days = None
+            total_days = None
+
             if not start_date or not end_date:
                 progress = None
                 remaining_days = None
-                total_days = None
                 status = "Incomplete sprint data"
+
             else:
                 total_days = (end_date.date() - start_date.date()).days
                 elapsed_days = (today - start_date.date()).days
 
                 if today < start_date.date():
                     progress = 0
+                    velocity = 0
                     status = "Not Started"
                     remaining_days = total_days
+
                 elif start_date.date() <= today <= end_date.date():
                     progress = round((elapsed_days / total_days) * 100, 2)
+                    velocity = round(progress / elapsed_days, 2) if elapsed_days > 0 else 0
                     status = "In Progress"
                     remaining_days = (end_date.date() - today).days
+
                 else:
                     progress = 100
+                    velocity = round(100 / total_days, 2) if total_days > 0 else None
                     status = "Completed / Past End Date"
                     remaining_days = 0
 
@@ -124,7 +134,8 @@ def lambda_handler(event, context):
                 "progress_percent": progress,
                 "days_total": total_days,
                 "days_remaining": remaining_days,
-                "last_update": str(updated_at)
+                "last_update": str(updated_at),
+                "velocity_percent_per_day": velocity,
             })
 
         # ==========================================================
