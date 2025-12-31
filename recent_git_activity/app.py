@@ -123,12 +123,71 @@ def lambda_handler(event, context):
         # FETCH RECENT PULL REQUESTS (last 20)
         # ================================================================
         cur.execute("""
-            SELECT id, github_id, repo, pr_number, title, action, state,
-                   author_login, head_sha, merged, timestamp
-            FROM pull_requests
-            ORDER BY timestamp DESC 
-            LIMIT 20
-        """)
+SELECT
+    pr.id,
+    pr.github_id,
+    pr.repo,
+    pr.pr_number,
+    pr.title,
+
+    -- PR action (webhook action)
+    pr.action AS pr_action,
+
+    -- GitHub state
+    pr.state,
+
+    pr.author_login,
+    pr.head_sha,
+    pr.merged,
+    pr.timestamp,
+
+    -- Reviewers (requested reviewers from GitHub payload)
+    -- Reviewers (requested reviewers from GitHub payload)
+    COALESCE(
+        (
+            SELECT jsonb_agg(r->>'login')
+            FROM jsonb_array_elements(
+                pr.raw->'requested_reviewers'
+            ) r
+        ),
+        '[]'::jsonb
+    ) AS reviewers,
+
+
+    -- PR STATUS (overall lifecycle)
+    CASE
+        WHEN pr.merged = true THEN 'MERGED'
+        WHEN pr.state = 'open'
+             AND (pr.raw->'pull_request'->>'draft')::boolean = true
+            THEN 'DRAFT'
+        WHEN pr.state = 'open'
+             AND jsonb_array_length(
+                 COALESCE(pr.raw->'pull_request'->'requested_reviewers', '[]'::jsonb)
+             ) > 0
+            THEN 'IN_REVIEW'
+        WHEN pr.state = 'open' THEN 'OPEN'
+        ELSE 'CLOSED'
+    END AS pr_status,
+
+    -- REVIEW STATUS (explicit & honest)
+    CASE
+        WHEN pr.merged = true THEN 'APPROVED_AND_MERGED'
+        WHEN pr.state = 'closed' AND pr.merged = false THEN 'CLOSED_WITHOUT_MERGE'
+        WHEN jsonb_array_length(
+                 COALESCE(pr.raw->'pull_request'->'requested_reviewers', '[]'::jsonb)
+             ) = 0 THEN 'NOT_REQUESTED'
+        ELSE 'PENDING_REVIEW'
+    END AS review_status
+
+FROM pull_requests pr
+ORDER BY pr.timestamp DESC
+LIMIT 20;
+
+
+
+""")
+
+
         rows = cur.fetchall()
         recent_pull_requests = rows_to_dicts(cur, rows)
 

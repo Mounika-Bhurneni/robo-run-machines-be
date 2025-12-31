@@ -1,7 +1,7 @@
 import os
 import json
 import psycopg2
-from datetime import datetime, date
+from datetime import date
 
 ALLOWED_ROLES = ["DEV", "QA", "MANAGER", "DEV_MANAGER"]
 
@@ -18,8 +18,14 @@ def get_connection():
 
 def lambda_handler(event, context):
     try:
+        # ==========================================================
         # Extract JWT claims
-        claims = event.get("requestContext", {}).get("authorizer", {}).get("jwt", {}).get("claims", {})
+        # ==========================================================
+        claims = event.get("requestContext", {}) \
+                      .get("authorizer", {}) \
+                      .get("jwt", {}) \
+                      .get("claims", {})
+
         user_email = claims.get("email")
         user_role = claims.get("custom:role")
         sub = claims.get("sub")
@@ -28,7 +34,9 @@ def lambda_handler(event, context):
         print("User Role:", user_role)
         print("sub:", sub)
 
+        # ==========================================================
         # Role check
+        # ==========================================================
         if not user_role or user_role not in ALLOWED_ROLES:
             return {
                 "statusCode": 403,
@@ -39,7 +47,7 @@ def lambda_handler(event, context):
         cur = conn.cursor()
 
         # ==========================================================
-        # Fetch ALL Sprints (Latest Record Per Sprint)
+        # Fetch ALL Sprints (latest record per sprint)
         # ==========================================================
         cur.execute("""
             SELECT DISTINCT ON (sprint_id)
@@ -58,10 +66,10 @@ def lambda_handler(event, context):
         """)
 
         sprints = cur.fetchall()
-        cur.close()
-        conn.close()
 
         if not sprints:
+            cur.close()
+            conn.close()
             return {
                 "statusCode": 404,
                 "body": json.dumps({"error": "No sprints found"})
@@ -87,38 +95,77 @@ def lambda_handler(event, context):
                 updated_at
             ) = sprint
 
-            # Compute progress
-            # Compute progress & velocity
-            velocity = None
-            elapsed_days = None
-            total_days = None
+            # -------------------------------
+            # WORK-BASED PROGRESS (DEV DONE)
+            # -------------------------------
+            cur.execute("""
+                SELECT
+    COUNT(*) AS total_issues,
 
-            if not start_date or not end_date:
-                progress = None
-                remaining_days = None
-                status = "Incomplete sprint data"
+    COUNT(*) FILTER (
+        WHERE
+            raw->'fields'->'status'->>'name'
+            IN (
+                'Ready for Testing',
+                'QA Ready',
+                'Done',
+                'Closed',
+                'Resolved'
+            )
+    ) AS dev_done_issues
 
+FROM jira_issues
+WHERE
+    -- ✅ EXCLUDE SUB-TASKS
+    COALESCE(
+        (raw->'fields'->'issuetype'->>'subtask')::boolean,
+        false
+    ) = false
+
+    AND EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(
+            COALESCE(
+                CASE
+                    WHEN jsonb_typeof(raw->'fields'->'customfield_10020') = 'array'
+                    THEN raw->'fields'->'customfield_10020'
+                    ELSE '[]'::jsonb
+                END,
+                '[]'::jsonb
+            )
+        ) sprint
+        WHERE (sprint->>'id')::int = %s
+    );
+
+
+            """, (str(sprint_id),))
+
+            total_issues, dev_done_issues = cur.fetchone()
+
+            if total_issues == 0:
+                progress = 0
+                status = "No Issues"
             else:
-                total_days = (end_date.date() - start_date.date()).days
-                elapsed_days = (today - start_date.date()).days
+                progress = round((dev_done_issues / total_issues) * 100, 2)
 
-                if today < start_date.date():
-                    progress = 0
-                    velocity = 0
-                    status = "Not Started"
-                    remaining_days = total_days
-
-                elif start_date.date() <= today <= end_date.date():
-                    progress = round((elapsed_days / total_days) * 100, 2)
-                    velocity = round(progress / elapsed_days, 2) if elapsed_days > 0 else 0
+                if progress == 100:
+                    status = "Completed"
+                elif progress > 0:
                     status = "In Progress"
-                    remaining_days = (end_date.date() - today).days
-
                 else:
-                    progress = 100
-                    velocity = round(100 / total_days, 2) if total_days > 0 else None
-                    status = "Completed / Past End Date"
-                    remaining_days = 0
+                    status = "Not Started"
+
+            # -------------------------------
+            # Time info (ONLY for display)
+            # -------------------------------
+            total_days = None
+            elapsed_days = None
+            remaining_days = None
+
+            if start_date and end_date:
+                total_days = (end_date.date() - start_date.date()).days
+                elapsed_days = max((today - start_date.date()).days, 0)
+                remaining_days = max((end_date.date() - today).days, 0)
 
             sprint_list.append({
                 "sprint_id": sprint_id,
@@ -126,8 +173,8 @@ def lambda_handler(event, context):
                 "name": name,
                 "state": state,
                 "goal": goal,
-                "total_days":total_days,
-                "elapsed_days":elapsed_days,
+                "total_days": total_days,
+                "elapsed_days": elapsed_days,
                 "start_date": str(start_date),
                 "end_date": str(end_date),
                 "status": status,
@@ -135,18 +182,27 @@ def lambda_handler(event, context):
                 "days_total": total_days,
                 "days_remaining": remaining_days,
                 "last_update": str(updated_at),
-                "velocity_percent_per_day": velocity,
+                "total_issues":total_issues,
+                "dev_done_issues":dev_done_issues,
+                "velocity_percent_per_day": None  # intentionally removed
             })
+
+        cur.close()
+        conn.close()
 
         # ==========================================================
         # Final Response
         # ==========================================================
         return {
             "statusCode": 200,
-            "body": json.dumps({
-                "count": len(sprint_list),
-                "sprints": sprint_list
-            }, default=str,indent=2)
+            "body": json.dumps(
+                {
+                    "count": len(sprint_list),
+                    "sprints": sprint_list
+                },
+                default=str,
+                indent=2
+            )
         }
 
     except Exception as e:
