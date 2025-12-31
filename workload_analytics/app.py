@@ -6,6 +6,7 @@ This version:
 - Checks whether tables and columns exist before querying.
 - If a table/column is missing it treats that aggregation as empty (count = 0).
 - Does NOT assume a `status` column anywhere.
+
 - Keeps the same response shape as before.
 """
 import os
