@@ -5,6 +5,21 @@ from datetime import datetime, timedelta
 import re
 
 
+def calculate_delta_percent(current_value, last_value):
+    """
+    % Change = ((Current - Last) / Last) * 100
+
+    IMPORTANT:
+    - If last_value is 0 or None → return None
+    - Prevents misleading +100% deltas
+    """
+    if last_value is None or last_value == 0:
+        return None
+
+    return round(((current_value - last_value) / last_value) * 100, 2)
+
+
+
 def normalize_email_for_login(email: str) -> str:
     """
     krishna.mayekar@aithinkers.com → krishnamayekar
@@ -242,12 +257,28 @@ def get_team_insights(org_id=None, user_id=None, email=None):
     blocked_count = cur.fetchone()[0]
 
     insights["team_metrics_summary"] = {
-        "total_jira_tickets": {"count": curr_tickets, "delta_percent": percent_change(curr_tickets, prev_tickets)},
-        "commits_prs": {"count": curr_commits, "delta_percent": percent_change(curr_commits, prev_commits)},
-        "high_priority_inactive": {"count": high_priority_count, "delta_percent": None},
-        "stale_prs": {"count": stale_pr_count, "delta_percent": None},
-        "blocked_issues": {"count": blocked_count, "delta_percent": None},
+        "total_jira_tickets": {
+            "count": curr_tickets,
+            "delta_percent": calculate_delta_percent(curr_tickets, prev_tickets)
+        },
+        "commits_prs": {
+            "count": curr_commits,
+            "delta_percent": calculate_delta_percent(curr_commits, prev_commits)
+        },
+        "high_priority_inactive": {
+            "count": high_priority_count,
+            "delta_percent": None
+        },
+        "stale_prs": {
+            "count": stale_pr_count,
+            "delta_percent": None
+        },
+        "blocked_issues": {
+            "count": blocked_count,
+            "delta_percent": None
+        },
     }
+
 
     cur.close()
     conn.close()
