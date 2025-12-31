@@ -961,10 +961,10 @@ Resources:
 
 
 
-  AiChatAssistantFunction:
+  AiChatAssistantV2Function:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub "${AWS::StackName}-ai-chat-assistant"
+      FunctionName: !Sub "${AWS::StackName}-ai-chat-assistant-v2"
       CodeUri: ai_chat_assistant/
       Handler: app.lambda_handler
       Runtime: python3.10
@@ -987,10 +987,10 @@ Resources:
           DB_PORT: !Ref ParamDBPort
 
 
-  AiSummaryRecommendationsFunction:
+  AiSummaryRecommendationsV2Function:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub "${AWS::StackName}-ai-summary-recommendations"
+      FunctionName: !Sub "${AWS::StackName}-ai-summary-recommendations-v2"
       CodeUri: ai_summary_recommendations/
       Handler: app.lambda_handler
       Runtime: python3.10
@@ -1011,7 +1011,6 @@ Resources:
           DB_PASSWORD: !Ref ParamDBPassword
           DB_NAME: !Ref ParamDBName
           DB_PORT: !Ref ParamDBPort
-
 
   FetchNotificationsFunction:
     Type: AWS::Serverless::Function
