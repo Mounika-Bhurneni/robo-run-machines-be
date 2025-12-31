@@ -10,7 +10,7 @@ def rows_to_dicts(cursor, rows):
 
 
 # ==========================================================
-# PostgreSQL Connection
+# PostgreSQL Connection test
 # ==========================================================
 def get_connection():
     try:
@@ -114,7 +114,6 @@ def lambda_handler(event, context):
                 ON pr.head_sha = gc.commit_sha
 
             ORDER BY gc.timestamp DESC
-            LIMIT 20
         """)
         rows = cur.fetchall()
         recent_commits = rows_to_dicts(cur, rows)
