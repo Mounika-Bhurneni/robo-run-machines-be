@@ -224,7 +224,7 @@ def get_team_insights(org_id=None, user_id=None, email=None, sprint_id=None):
     high_priority_email_filter = "AND assignee_email = %s" if email else ""
     cur.execute(f"""
         SELECT COUNT(*) FROM jira_issues
-        WHERE priority IN ('High','Critical')
+        WHERE priority IN ('Highest','Critical')
           AND status NOT IN ('Done','Closed','Resolved')
           {high_priority_email_filter}
           {sprint_sql}
