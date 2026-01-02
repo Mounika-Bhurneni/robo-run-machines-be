@@ -98,49 +98,73 @@ def lambda_handler(event, context):
             # -------------------------------
             # WORK-BASED PROGRESS (DEV DONE)
             # -------------------------------
+            # -------------------------------
+            # WORK-BASED PROGRESS (DEV DONE ONLY)
+            # -------------------------------
             cur.execute("""
                 SELECT
-    COUNT(*) AS total_issues,
-
-    COUNT(*) FILTER (
-        WHERE
-            raw->'fields'->'status'->>'name'
-            IN (
-                'Ready for Testing',
-                'QA Ready',
-                'Done',
-                'Closed',
-                'Resolved'
-            )
-    ) AS dev_done_issues
-
-FROM jira_issues
-WHERE
-    -- ✅ EXCLUDE SUB-TASKS
-    COALESCE(
-        (raw->'fields'->'issuetype'->>'subtask')::boolean,
-        false
-    ) = false
-
-    AND EXISTS (
-        SELECT 1
-        FROM jsonb_array_elements(
-            COALESCE(
-                CASE
-                    WHEN jsonb_typeof(raw->'fields'->'customfield_10020') = 'array'
-                    THEN raw->'fields'->'customfield_10020'
-                    ELSE '[]'::jsonb
-                END,
-                '[]'::jsonb
-            )
-        ) sprint
-        WHERE (sprint->>'id')::int = %s
-    );
-
-
+                    COUNT(*) AS total_issues,
+                    COUNT(*) FILTER (
+                        WHERE raw->'fields'->'status'->>'name'
+                        IN ('Dev Done', 'Done', 'Closed', 'Resolved')
+                    ) AS dev_done_issues
+                FROM jira_issues
+                WHERE
+                    COALESCE(
+                        (raw->'fields'->'issuetype'->>'subtask')::boolean,
+                        false
+                    ) = false
+                    AND EXISTS (
+                        SELECT 1
+                        FROM jsonb_array_elements(
+                            COALESCE(
+                                CASE
+                                    WHEN jsonb_typeof(raw->'fields'->'customfield_10020') = 'array'
+                                    THEN raw->'fields'->'customfield_10020'
+                                    ELSE '[]'::jsonb
+                                END,
+                                '[]'::jsonb
+                            )
+                        ) sprint
+                        WHERE (sprint->>'id')::int = %s
+                    );
             """, (str(sprint_id),))
 
             total_issues, dev_done_issues = cur.fetchone()
+
+            # -------------------------------
+            # Sprint Progress %
+            # -------------------------------
+            progress_percent = round((dev_done_issues / total_issues) * 100, 2) if total_issues else 0
+
+            # -------------------------------
+            # Sprint Time Calculation
+            # -------------------------------
+            total_days = elapsed_days = remaining_days = time_elapsed_percent = None
+
+            if start_date and end_date:
+                total_days = (end_date.date() - start_date.date()).days
+                elapsed_days = max((today - start_date.date()).days, 0)
+                remaining_days = max((end_date.date() - today).days, 0)
+
+                if total_days > 0:
+                    time_elapsed_percent = round((elapsed_days / total_days) * 100, 2)
+
+            # -------------------------------
+            # Sprint Health Status
+            # -------------------------------
+            sprint_status = "NO_DATA"
+
+            if time_elapsed_percent is not None:
+                gap = time_elapsed_percent - progress_percent
+
+                if progress_percent >= time_elapsed_percent:
+                    sprint_status = "ON_TRACK"
+                elif gap <= 15:
+                    sprint_status = "AT_RISK"
+                else:
+                    sprint_status = "OFF_TRACK"
+
 
             if total_issues == 0:
                 progress = 0
@@ -173,19 +197,28 @@ WHERE
                 "name": name,
                 "state": state,
                 "goal": goal,
-                "total_days": total_days,
-                "elapsed_days": elapsed_days,
+
+                # Dates
                 "start_date": str(start_date),
                 "end_date": str(end_date),
-                "status": status,
-                "progress_percent": progress,
-                "days_total": total_days,
-                "days_remaining": remaining_days,
-                "last_update": str(updated_at),
-                "total_issues":total_issues,
-                "dev_done_issues":dev_done_issues,
-                "velocity_percent_per_day": None  # intentionally removed
+
+                # Work metrics
+                "total_issues": total_issues,
+                "dev_done_issues": dev_done_issues,
+                "progress_percent": progress_percent,
+
+                # Time metrics
+                "total_days": total_days,
+                "elapsed_days": elapsed_days,
+                "remaining_days": remaining_days,
+                "time_elapsed_percent": time_elapsed_percent,
+
+                # Final sprint health
+                "sprint_status": sprint_status,
+
+                "last_update": str(updated_at)
             })
+
 
         cur.close()
         conn.close()

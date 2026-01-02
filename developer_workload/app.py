@@ -23,7 +23,6 @@ def is_high_priority(priority):
         return False
 
     p = priority.strip().lower()
-
     return any(keyword in p for keyword in (
         "highest",
         "high",
@@ -38,44 +37,87 @@ def lambda_handler(event, context):
     conn = get_connection()
     cur = conn.cursor()
 
-    # -------------------------
-    # Get email from query params (optional)
-    # -------------------------
-    email = (event.get("queryStringParameters") or {}).get("email")
+    params = event.get("queryStringParameters") or {}
+
+    email = params.get("email")
+    sprint_id = params.get("sprint_id")
+
+
 
     # -------------------------
-    # Fetch Jira Issues
+    # Fetch Jira Issues (Sprint Scoped)
     # -------------------------
+    base_query = """
+        SELECT assignee_user_id,
+            assignee_name,
+            assignee_email,
+            status,
+            priority,
+            updated_at
+        FROM jira_issues
+        WHERE assignee_user_id IS NOT NULL
+    """
+
+    params = []
+
     if email:
-        cur.execute("""
-            SELECT assignee_user_id, assignee_name, assignee_email, status, priority, updated_at
-            FROM jira_issues
-            WHERE assignee_user_id IS NOT NULL
-              AND assignee_email = %s
-        """, (email,))
-    else:
-        cur.execute("""
-            SELECT assignee_user_id, assignee_name, assignee_email, status, priority, updated_at
-            FROM jira_issues
-            WHERE assignee_user_id IS NOT NULL
-        """)
+        base_query += " AND assignee_email = %s"
+        params.append(email)
 
+    if sprint_id:
+        base_query += """
+            AND jsonb_typeof(raw->'fields'->'customfield_10020') = 'array'
+            AND EXISTS (
+                SELECT 1
+                FROM jsonb_array_elements(raw->'fields'->'customfield_10020') sprint
+                WHERE sprint->>'id' = %s
+            )
+        """
+        params.append(sprint_id)
+
+    cur.execute(base_query, tuple(params))
     issues = cur.fetchall()
 
+
     # -------------------------
-    # Fetch Jira Subtasks
+    # Fetch Jira Subtasks (Sprint Scoped)
     # -------------------------
     if email:
         cur.execute("""
-            SELECT author_login, status, timestamp
-            FROM jira_subtasks
-            WHERE author_login = %s
-        """, (email,))
+            SELECT assignee_user_id,
+                assignee_name,
+                assignee_email,
+                status,
+                priority,
+                updated_at
+            FROM jira_issues
+            WHERE assignee_user_id IS NOT NULL
+            AND assignee_email = %s
+            AND jsonb_typeof(raw->'fields'->'customfield_10020') = 'array'
+            AND EXISTS (
+                SELECT 1
+                FROM jsonb_array_elements(raw->'fields'->'customfield_10020') sprint
+                WHERE sprint->>'id' = %s
+            )
+        """, (email, sprint_id))
     else:
         cur.execute("""
-            SELECT author_login, status, timestamp
-            FROM jira_subtasks
-        """)
+    SELECT assignee_user_id,
+           assignee_name,
+           assignee_email,
+           status,
+           priority,
+           updated_at
+    FROM jira_issues
+    WHERE assignee_user_id IS NOT NULL
+      AND jsonb_path_exists(
+            raw,
+            '$.fields.customfield_10020[*] ? (@.id == $sprint_id)',
+            jsonb_build_object('sprint_id', to_jsonb(%s::int))
+          )
+""", (sprint_id,))
+
+
 
     subtasks = cur.fetchall()
 
@@ -102,17 +144,13 @@ def lambda_handler(event, context):
         if status.lower() not in ("done", "closed", "resolved"):
             workload[assignee_id]["open_issues"] += 1
 
-                # Count HIGH PRIORITY only if issue is still open
-        if (
-            status.lower() not in ("done", "closed", "resolved")
-            and is_high_priority(priority)
-        ):
-            workload[assignee_id]["high_priority_issues"] += 1
-
+            if is_high_priority(priority):
+                workload[assignee_id]["high_priority_issues"] += 1
 
         if updated_at:
             if updated_at.tzinfo is None:
                 updated_at = updated_at.replace(tzinfo=timezone.utc)
+
             idle_days = (now - updated_at).days
             workload[assignee_id]["idle_days_max"] = max(
                 workload[assignee_id]["idle_days_max"],
@@ -122,19 +160,23 @@ def lambda_handler(event, context):
     # -------------------------
     # Process Subtasks
     # -------------------------
-    for author_login, status, timestamp in subtasks:
-        if author_login not in workload:
-            workload[author_login] = {
-                "name": author_login,
-                "email": author_login,  # Use login as email for now
+    # -------------------------
+    # Process Subtasks
+    # -------------------------
+    for assignee_id, name, assignee_email, status, priority, updated_at in subtasks:
+        if assignee_id not in workload:
+            workload[assignee_id] = {
+                "name": name,
+                "email": assignee_email,
                 "open_issues": 0,
                 "high_priority_issues": 0,
                 "idle_days_max": 0,
                 "subtasks": 0
             }
 
-        if status.lower() not in ("done", "closed", "resolved"):
-            workload[author_login]["subtasks"] += 1
+        if status and status.lower() not in ("done", "closed", "resolved"):
+            workload[assignee_id]["subtasks"] += 1
+
 
     # -------------------------
     # Prepare Response
